@@ -166,25 +166,17 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
   const signIn = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      // First verify the credentials using admin client
-      const { data: userData, error: adminError } = await supabaseAdmin.auth.admin.signInWithEmail(email, password);
-      
-      if (adminError) {
-        throw adminError;
-      }
-
-      if (!userData?.user) {
-        throw new Error('No user data returned');
-      }
-
-      // Then sign in normally to get a valid session
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (signInError) {
-        throw signInError;
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.user) {
+        throw new Error('No user data returned');
       }
 
     } catch (error: unknown) {
