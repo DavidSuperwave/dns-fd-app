@@ -451,34 +451,61 @@ export default function DomainsPage() {
     }
   }, [isAdmin, user?.email]); // Remove unnecessary supabase dependency
 
-  // Load assigned users on mount and after changes
+  // Load assigned users and setup realtime subscriptions
   useEffect(() => {
     // Initial load
     loadAssignedUsers();
 
-    // Subscribe to changes
-    const subscription = supabase
-      .channel('domain_assignments_changes')
+    // Create a single channel for all subscriptions
+    const channel = supabase.channel('realtime_changes');
+
+    // Subscribe to domain assignments changes
+    channel
       .on('postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'domain_assignments'
         },
-        () => {
-          // Reload assigned users when assignments change
-          loadAssignedUsers();
-          // Also reload domains to reflect assignment changes
-          loadDomains(); // Call without arguments
+        async (payload) => {
+          // Only reload if the change affects the current user
+          const assignment = payload.new as DomainAssignment;
+          if (isAdmin || (user?.email && assignment?.user_email === user.email)) {
+            await loadAssignedUsers();
+            await loadDomains();
+          }
+        }
+      )
+      // Subscribe to domains changes
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'domains'
+        },
+        async (payload) => {
+          const domain = payload.new as CloudflareDomain;
+          // Only reload if:
+          // 1. User is admin
+          // 2. Domain was created by user
+          // 3. Domain is assigned to user
+          if (isAdmin ||
+              (user?.email && (
+                domain?.created_by === user.email ||
+                (assignedUsers && domain?.id && assignedUsers[domain.id] === user.email)
+              ))
+          ) {
+            await loadDomains();
+          }
         }
       )
       .subscribe();
 
     return () => {
-      subscription.unsubscribe();
+      channel.unsubscribe();
     };
-  }, [currentPage, loadAssignedUsers, loadDomains]); // Remove unnecessary supabase dependency
-  
+  }, [isAdmin, user?.email, loadAssignedUsers, loadDomains, assignedUsers]);
+
   // Handle dialog state
   const handleOpenChange = (open: boolean) => {
     if (!open) {
@@ -581,57 +608,6 @@ export default function DomainsPage() {
   };
 
   // Trigger full sync with Cloudflare
-
-  // Subscribe to realtime changes
-  useEffect(() => {
-    // Subscribe to both domains and domain_assignments changes
-    const domainsChannel = supabase.channel('domains_changes');
-    
-    // Subscribe to domains changes
-    domainsChannel.on('postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'domains'
-      },
-      (payload) => {
-        console.log('Domains update:', payload);
-        const newDomain = payload.new as { created_by?: string; id?: string };
-        
-        // Reload if:
-        // 1. User is admin
-        // 2. Domain was created by user
-        // 3. Domain is assigned to user
-        if (isAdmin ||
-            (user?.email && (
-              newDomain?.created_by === user.email ||
-              (assignedUsers && assignedUsers[newDomain?.id || ''] === user.email)
-            ))
-        ) {
-          loadDomains(); // Call without arguments
-        }
-      }
-    );
-
-    // Subscribe to domain_assignments changes
-    domainsChannel.on('postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'domain_assignments'
-      },
-      () => {
-        // Reload assignments and domains when assignments change
-        loadAssignedUsers();
-        loadDomains(); // Call without arguments
-      }
-    ).subscribe();
-
-    return () => {
-      domainsChannel.unsubscribe();
-    };
-  }, [currentPage, isAdmin, user?.email, loadDomains, loadAssignedUsers, assignedUsers]);
-
 
 
   // Handle page change
