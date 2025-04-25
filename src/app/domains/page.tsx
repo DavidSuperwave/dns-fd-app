@@ -403,8 +403,10 @@ export default function DomainsPage() {
 
   // Load domains when page, search, or status filter changes
   useEffect(() => {
-    loadDomains(); // Call without arguments
-  }, [currentPage, loadDomains]);
+    if (isAdmin !== undefined && user?.email) {
+      loadDomains();
+    }
+  }, [isAdmin, user?.email, currentPage, loadDomains]);
 
   // Mock users for assignment - in a real app this would come from an API
   const mockUsers = [
