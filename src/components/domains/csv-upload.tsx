@@ -6,6 +6,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { supabase, supabaseAdmin } from '@/lib/supabase-client';
 import { toast } from 'sonner';
 import { FileIcon, Loader2, Download } from 'lucide-react';
+import { validateCsvContent } from '@/lib/csv-validator';
+import { CsvValidationDialog } from './csv-validation-dialog';
 
 interface CSVFile {
   name: string;
@@ -20,6 +22,12 @@ interface CSVUploadProps {
 }
 
 export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: CSVUploadProps) {
+  const [showValidationDialog, setShowValidationDialog] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<{
+    errors: string[];
+    repeatedEmails: [string, string][];
+    hasErrors: boolean;
+  } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [files, setFiles] = useState<CSVFile[]>([]);
@@ -97,7 +105,18 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
     }
 
     setIsUploading(true);
+
     try {
+      // Read and validate file content
+      const content = await file.text();
+      const validation = await validateCsvContent(content);
+
+      if (validation.hasErrors) {
+        setValidationErrors(validation);
+        setShowValidationDialog(true);
+        return;
+      }
+
       // Create filename with timestamp and unique ID
       const now = new Date();
       // Format as MMDDYYYY_HHMM
@@ -109,6 +128,8 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       const timestamp = `${month}${day}${year}_${hours}${minutes}`;
       const uniqueId = Date.now();
       const fileName = `${timestamp}_${uniqueId}.csv`;
+
+      // Upload file to storage
       const { error: uploadError } = await supabaseAdmin.storage
         .from('domain-csv-files')
         .upload(`${domainId}/${fileName}`, file);
@@ -127,10 +148,12 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       toast.success('CSV file uploaded successfully');
       await loadFiles(); // Refresh file list
     } catch (error) {
-      console.error('Upload error:', error);
-      toast.error('Failed to upload CSV file');
+      console.error('Error processing file:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to process CSV file');
     } finally {
       setIsUploading(false);
+      setValidationErrors(null);
+      setShowValidationDialog(false);
     }
   };
 
@@ -180,6 +203,17 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
 
   return (
     <>
+      {/* Validation Error Dialog */}
+      {validationErrors && (
+        <CsvValidationDialog
+          isOpen={showValidationDialog}
+          onClose={() => {
+            setShowValidationDialog(false);
+            setValidationErrors(null);
+          }}
+          validation={validationErrors}
+        />
+      )}
       <input
         type="file"
         accept=".csv"
