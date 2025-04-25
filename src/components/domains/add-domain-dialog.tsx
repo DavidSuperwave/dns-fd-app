@@ -20,7 +20,7 @@ import { Loader2, AlertCircle, CheckCircle2, Copy, AlertTriangle, Info } from "l
 interface AddDomainDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onDomainAdded?: (domain: any) => void;
+  onDomainAdded?: (domain: { id: string; name: string; }) => void; // Basic domain type
 }
 
 export function AddDomainDialog({
@@ -29,6 +29,7 @@ export function AddDomainDialog({
   onDomainAdded,
 }: AddDomainDialogProps) {
   const [domainName, setDomainName] = useState("");
+  const [redirect, setRedirect] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -36,8 +37,57 @@ export function AddDomainDialog({
   const [originalNameservers, setOriginalNameservers] = useState<string[]>([]);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
 
+  // Function to strip http://, https://, and www.
+  const stripUrlPrefixes = (url: string) => {
+    return url.replace(/^(https?:\/\/)?(www\.)?/, '');
+  };
+
+  // Function to validate domain
+  const validateDomain = (domain: string): { isValid: boolean; error?: string } => {
+    // Strip prefixes first
+    const cleanDomain = stripUrlPrefixes(domain);
+    
+    // Check for dashes in domain part (before first dot)
+    const domainPart = cleanDomain.split('.')[0];
+    if (domainPart.includes('-')) {
+      return {
+        isValid: false,
+        error: "We do not support dashed domains yet"
+      };
+    }
+
+    // Basic domain validation (allows slugs only for redirect)
+    const domainRegex = /^[a-z0-9][a-z0-9-]*[a-z0-9](\.[a-z0-9-]+)*\.[a-z]{2,}$/i;
+    if (!domainRegex.test(cleanDomain)) {
+      return {
+        isValid: false,
+        error: "Please enter a valid domain name (e.g., example.com)"
+      };
+    }
+
+    // Additional validation to catch common typos
+    const commonTlds = ['.com', '.net', '.org', '.edu', '.gov', '.co', '.io'];
+    const hasSimilarTld = commonTlds.some(tld =>
+      cleanDomain.endsWith(tld) ||
+      commonTlds.some(otherTld =>
+        cleanDomain.endsWith(otherTld.slice(0, -1)) || // Catches .co instead of .com
+        cleanDomain.endsWith(otherTld + 'm') // Catches .comm
+      )
+    );
+    
+    if (!hasSimilarTld) {
+      return {
+        isValid: false,
+        error: "Please check the domain extension for typos"
+      };
+    }
+
+    return { isValid: true };
+  };
+
   const resetForm = () => {
     setDomainName("");
+    setRedirect("");
     setError(null);
     setWarningMessage(null);
     setSuccess(false);
@@ -67,11 +117,24 @@ export function AddDomainDialog({
       return;
     }
 
-    // Simple domain name validation
-    const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/i;
-    if (!domainRegex.test(domainName)) {
-      setError("Please enter a valid domain name (e.g., example.com)");
+    // Clean and validate domain
+    const cleanDomain = stripUrlPrefixes(domainName);
+    const domainValidation = validateDomain(cleanDomain);
+    
+    if (!domainValidation.isValid) {
+      setError(domainValidation.error || "Invalid domain name");
       return;
+    }
+
+    // Clean and validate redirect if provided
+    let cleanRedirect = '';
+    if (redirect.trim()) {
+      cleanRedirect = stripUrlPrefixes(redirect);
+      // For redirect, we allow slugs so we don't validate with validateDomain
+      if (!cleanRedirect.match(/^[a-z0-9][a-z0-9-]*[a-z0-9](\.[a-z0-9-]+)*\.[a-z]{2,}$/i)) {
+        setError("Please enter a valid redirect domain");
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -79,7 +142,7 @@ export function AddDomainDialog({
     setWarningMessage(null);
     
     try {
-      const result = await createDomain(domainName);
+      const result = await createDomain(cleanDomain, cleanRedirect || undefined);
       
       if (result.success) {
         setSuccess(true);
@@ -101,10 +164,11 @@ export function AddDomainDialog({
       } else {
         throw new Error(result.error || "Failed to add domain");
       }
-    } catch (err: any) {
+    } catch (err: unknown) { // Use unknown for better type safety
+      const error = err as Error; // Type assertion
       console.error("Error adding domain:", err);
-      setError(err.message || "Failed to add domain. Please try again.");
-      toast.error(`Error adding domain: ${err.message}`);
+      setError(error.message || "Failed to add domain. Please try again.");
+      toast.error(`Error adding domain: ${error.message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -116,7 +180,7 @@ export function AddDomainDialog({
         <DialogHeader>
           <DialogTitle>Add New Domain</DialogTitle>
           <DialogDescription>
-            Add a new domain to your Cloudflare account. You'll need to set up the nameservers to complete the process.
+            Add a new domain to your Cloudflare account. You can optionally specify a redirect URL. The system will automatically strip http://, https://, and www. prefixes.
           </DialogDescription>
         </DialogHeader>
 
@@ -129,9 +193,31 @@ export function AddDomainDialog({
                 </Label>
                 <Input
                   id="domain-name"
-                  placeholder="example.com"
+                  placeholder="example.com (without http:// or www.)"
                   value={domainName}
-                  onChange={(e) => setDomainName(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value.toLowerCase();
+                    setDomainName(value);
+                    setError(null);
+                  }}
+                  className="col-span-3"
+                  disabled={isSubmitting}
+                />
+              </div>
+              
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="redirect" className="text-right">
+                  Redirect To
+                </Label>
+                <Input
+                  id="redirect"
+                  placeholder="target-domain.com or target-domain.com/path (optional)"
+                  value={redirect}
+                  onChange={(e) => {
+                    const value = e.target.value.toLowerCase();
+                    setRedirect(value);
+                    setError(null);
+                  }}
                   className="col-span-3"
                   disabled={isSubmitting}
                 />

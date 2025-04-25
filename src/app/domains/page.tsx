@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
-import { PlusCircle, RefreshCw } from "lucide-react";
+import { PlusCircle, ExternalLink, Loader2, AlertTriangle } from "lucide-react";
+import { supabase, supabaseAdmin } from "@/lib/supabase-client";
 import {
   Table,
   TableBody,
@@ -24,6 +25,7 @@ import {
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { toast } from "sonner";
+import { Alert, AlertDescription } from "../../components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -32,7 +34,14 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import DashboardLayout from "../../components/layout/dashboard-layout";
-import { fetchDomains } from "../../lib/cloudflare-api";
+import { useAuth } from "../../components/auth/auth-provider";
+
+// Domain assignment interface
+interface DomainAssignment {
+  domain_id: string;
+  user_email: string;
+  created_by?: string | null;
+}
 
 // Cloudflare domain interface
 interface CloudflareDomain {
@@ -43,6 +52,9 @@ interface CloudflareDomain {
   type: string;
   created_on: string;
   modified_on: string;
+  last_synced?: string | null;
+  redirect_url?: string | null;
+  created_by?: string;
 }
 
 // Result info interface from Cloudflare
@@ -58,62 +70,18 @@ interface ResultInfo {
 type DomainStatusFilter = "all" | "active" | "inactive" | "pending" | "paused" | "moved" | "initializing" | "deactivated";
 
 // Mock domains data
-const mockDomains: CloudflareDomain[] = [
-  {
-    id: "1",
-    name: "example.com",
-    status: "active",
-    paused: false,
-    type: "full",
-    created_on: "2023-01-15T12:00:00Z",
-    modified_on: "2023-01-15T12:00:00Z"
-  },
-  {
-    id: "2",
-    name: "test-domain.com",
-    status: "active",
-    paused: false,
-    type: "full",
-    created_on: "2023-02-20T12:00:00Z",
-    modified_on: "2023-02-20T12:00:00Z"
-  },
-  {
-    id: "3",
-    name: "demo-site.com",
-    status: "pending",
-    paused: false,
-    type: "full",
-    created_on: "2023-03-10T12:00:00Z",
-    modified_on: "2023-03-10T12:00:00Z"
-  },
-  {
-    id: "4",
-    name: "paused-domain.com",
-    status: "active",
-    paused: true,
-    type: "full",
-    created_on: "2023-04-05T12:00:00Z",
-    modified_on: "2023-04-05T12:00:00Z"
-  },
-  {
-    id: "5",
-    name: "inactive-domain.com",
-    status: "inactive",
-    paused: false,
-    type: "full",
-    created_on: "2023-04-15T12:00:00Z",
-    modified_on: "2023-04-15T12:00:00Z"
-  },
-  {
-    id: "6",
-    name: "moved-domain.com",
-    status: "moved",
-    paused: false,
-    type: "full",
-    created_on: "2023-04-20T12:00:00Z",
-    modified_on: "2023-04-20T12:00:00Z"
-  }
-];
+const mockDomains: CloudflareDomain[] = Array.from({ length: 6 }, (_, i) => ({
+  id: String(i + 1),
+  name: `example-${i + 1}.com`,
+  status: i === 2 ? "pending" : i === 4 ? "inactive" : i === 5 ? "moved" : "active",
+  paused: i === 3,
+  type: "full",
+  created_on: new Date(2023, 0, 15 + i * 30).toISOString(),
+  modified_on: new Date(2023, 0, 15 + i * 30).toISOString(),
+  last_synced: i === 5 ? null : new Date(2023, 0, 16 + i * 30).toISOString(),
+  redirect_url: i % 2 === 0 ? `https://target-${i + 1}.com` : null,
+  created_by: "admin@example.com"
+}));
 
 // Mock pagination info
 const mockResultInfo: ResultInfo = {
@@ -126,22 +94,317 @@ const mockResultInfo: ResultInfo = {
 
 export default function DomainsPage() {
   const router = useRouter();
+  const { user, isAdmin } = useAuth();
+  const [allDomains, setAllDomains] = useState<CloudflareDomain[]>([]);
   const [domains, setDomains] = useState<CloudflareDomain[]>([]);
   const [filteredDomains, setFilteredDomains] = useState<CloudflareDomain[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState<boolean>(false);
+  const [isSyncing] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const [resultInfo, setResultInfo] = useState<ResultInfo | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [totalPages, setTotalPages] = useState<number>(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [showNameservers, setShowNameservers] = useState(false);
+  const [nameservers, setNameservers] = useState<string[]>([]);
+  const [originalNameservers, setOriginalNameservers] = useState<string[]>([]);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [usingMockData, setUsingMockData] = useState(false);
   const [statusFilter, setStatusFilter] = useState<DomainStatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [userSearchQuery, setUserSearchQuery] = useState<string>("");
   const [selectedDomainForAssignment, setSelectedDomainForAssignment] = useState<CloudflareDomain | null>(null);
-  const [domainAssignments, setDomainAssignments] = useState<Record<string, string>>({});
-  
+  const [selectedDomainForDeletion, setSelectedDomainForDeletion] = useState<CloudflareDomain | null>(null);
+  const [deletionConfirmation, setDeletionConfirmation] = useState<string>("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [assignedUsers, setAssignedUsers] = useState<Record<string, string>>({});
+
+
+  // Apply filters to domains - wrapped in useCallback
+  const applyFilters = useCallback((domains: CloudflareDomain[]) => {
+    // Safety check - if domains is undefined or null, return empty array
+    if (!domains || !Array.isArray(domains)) {
+      console.warn("Domains data is not an array:", domains);
+      return [];
+    }
+    let result = [...domains];
+
+    // Log original data for debugging
+    console.log(`Original domains count: ${domains.length}`);
+
+    // Apply search query first
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      result = result.filter(domain => {
+        const name = domain.name.toLowerCase();
+        // Check if it's an exact match first
+        if (name === query) return true;
+        // Then check for partial matches
+        if (name.includes(query)) return true;
+        // Remove common prefixes/suffixes for matching
+        const cleanName = name.replace(/^(www\.|http:\/\/|https:\/\/)/, '').replace(/\.[a-z]{2,}$/, '');
+        const cleanQuery = query.replace(/^(www\.|http:\/\/|https:\/\/)/, '').replace(/\.[a-z]{2,}$/, '');
+        return cleanName.includes(cleanQuery);
+      });
+      console.log(`Found ${result.length} domains matching search "${query}"`);
+    }
+
+    // Then apply status filter
+    if (statusFilter !== "all") {
+      const preFilterCount = result.length;
+      if (statusFilter === "paused") {
+        // Filter for paused domains
+        result = result.filter(domain => domain.paused);
+      } else {
+        // Exact status matching
+        result = result.filter(domain => {
+          if (domain.paused) return false;
+          return String(domain.status || "").trim().toLowerCase() === statusFilter.toLowerCase();
+        });
+      }
+      console.log(`Filtered from ${preFilterCount} to ${result.length} domains with status "${statusFilter}"`);
+    }
+
+    // Log filtered results for debugging
+    console.log(`Filtered to ${result.length} domains with status: ${statusFilter}`);
+    if (result.length > 0) {
+      console.log('Sample filtered domains:');
+      result.slice(0, 3).forEach(domain => {
+        console.log(`- ${domain.name}, Status: ${domain.status}, Paused: ${domain.paused}`);
+      });
+    }
+
+    return result;
+  }, [searchQuery, statusFilter]); // Added dependencies for applyFilters
+
+
+  // Load domains from latest scan
+  const loadDomains = useCallback(async (useMockData: boolean = false) => {
+    setIsLoading(true);
+    setIsError(false);
+    
+    try {
+      if (useMockData) {
+        // Use mock data with last sync time
+        const mockWithSync = mockDomains.map(domain => ({
+          ...domain,
+          last_synced: lastSyncTime || domain.last_synced
+        }));
+        setAllDomains(mockWithSync);
+        setDomains(mockWithSync);
+        setFilteredDomains(mockWithSync);
+        setResultInfo(mockResultInfo);
+        setTotalPages(mockResultInfo.total_pages);
+        setUsingMockData(true);
+        toast.info("Using sample data for demonstration");
+      } else {
+        console.log("Loading domains from database...");
+        
+        try {
+          // Get the latest completed scan for timestamp
+          const { data: scanData } = await supabase
+            .from('scan_results')
+            .select('completed_at, updated_at')
+            .eq('status', 'completed')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+          // Parse and format the timestamp to ISO string
+          const timestamp = scanData?.completed_at || scanData?.updated_at;
+          const syncTime = timestamp ? new Date(timestamp as string).toISOString() : null;
+          setLastSyncTime(syncTime);
+
+          // Build query base without limit/range - we'll use manual pagination
+          let queryBase = supabase.from('domains').select('*', { count: 'exact' });
+
+          // For non-admin users, filter by assigned domains
+          if (!isAdmin && user?.email) {
+            const { data: assignments } = await supabase
+              .from('domain_assignments')
+              .select('domain_id')
+              .eq('user_email', user.email);
+
+            if (!assignments?.length) {
+              console.log('No domains assigned to user');
+              setAllDomains([]);
+              setDomains([]);
+              setFilteredDomains([]);
+              setResultInfo(null);
+              setTotalPages(1);
+              return;
+            }
+
+            const assignedDomainIds = assignments.map(a => a.domain_id);
+            queryBase = queryBase.in('id', assignedDomainIds);
+          }
+
+          // Apply search filter
+          if (searchQuery.trim()) {
+            queryBase = queryBase.ilike('name', `%${searchQuery.trim()}%`);
+          }
+
+          // Apply status filter
+          if (statusFilter !== "all") {
+            if (statusFilter === "paused") {
+              queryBase = queryBase.eq('paused', true);
+            } else {
+              queryBase = queryBase.eq('paused', false).eq('status', statusFilter);
+            }
+          }
+
+          // Add consistent ordering
+          queryBase = queryBase.order('modified_on', { ascending: false });
+
+          console.log('Base query built:', {
+            isAdmin,
+            hasFilters: searchQuery.trim() || statusFilter !== "all",
+            userEmail: user?.email
+          });
+
+          // First get count of matching records
+          const { count, error: countError } = await queryBase;
+          
+          if (countError) {
+            console.error('Count query error:', countError);
+            throw countError;
+          }
+          
+          const totalCount = count || 0;
+          console.log(`Total matching records: ${totalCount}`);
+
+          // Fetch all data in chunks
+          const PAGE_SIZE = 1000; // Supabase's maximum
+          const allData: CloudflareDomain[] = [];
+          const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+          
+          for (let page = 0; page < totalPages; page++) {
+            const from = page * PAGE_SIZE;
+            const to = from + PAGE_SIZE - 1;
+            
+            console.log(`Fetching page ${page + 1}/${totalPages} (rows ${from}-${to})`);
+            
+            const { data: pageData, error: pageError } = await queryBase
+              .range(from, to);
+              
+            if (pageError) {
+              console.error(`Error fetching page ${page + 1}:`, pageError);
+              throw pageError;
+            }
+            
+            if (pageData && pageData.length > 0) {
+              // Double cast to safely convert the data
+              const typedPageData = (pageData as unknown) as CloudflareDomain[];
+              allData.push(...typedPageData);
+              console.log(`Added ${pageData.length} records, total: ${allData.length}`);
+            }
+          }
+          
+          // Use the complete combined dataset
+          const data = allData;
+          const error = null;
+
+          if (error) {
+            console.error('Query error:', error);
+            throw error;
+          }
+          if (!data) {
+            console.error('No data returned');
+            throw new Error('No data returned from query');
+          }
+
+          console.log('Query results:', {
+            count: data.length,
+            hasData: data.length > 0,
+            firstItem: data[0]
+          });
+
+          // Reset to page 1 if current page is invalid
+          if (currentPage > Math.ceil(totalCount / 25)) {
+            console.log('Resetting to page 1 - current page out of bounds');
+            setCurrentPage(1);
+          }
+
+          if (data.length === 0) {
+            setAllDomains([]);
+            setDomains([]);
+            setFilteredDomains([]);
+            setTotalPages(1);
+            setResultInfo({
+              page: 1,
+              per_page: 25,
+              total_pages: 1,
+              count: 0,
+              total_count: 0
+            });
+            return;
+          }
+
+          // Store the full dataset and calculate pagination
+          const fullData = data || [];
+          console.log('Full data:', fullData.length);
+
+          // Calculate total pages from full dataset
+          const calculatedPages = Math.ceil(totalCount / 25);
+          console.log('Total pages:', calculatedPages);
+
+          // Ensure current page is valid
+          const validPage = Math.min(Math.max(1, currentPage), calculatedPages);
+          if (validPage !== currentPage) {
+            console.log('Adjusting current page:', currentPage, '->', validPage);
+            setCurrentPage(validPage);
+          }
+
+          // Apply filters to full dataset first
+          const filteredResults = applyFilters(fullData);
+          
+          // Calculate pagination based on filtered results
+          const totalFilteredPages = Math.ceil(filteredResults.length / 25);
+          const validFilteredPage = Math.min(Math.max(1, currentPage), totalFilteredPages);
+          
+          // Get page slice from filtered results
+          const startIndex = (validFilteredPage - 1) * 25;
+          const endIndex = Math.min(startIndex + 25, filteredResults.length);
+          const currentPageSlice = filteredResults.slice(startIndex, endIndex);
+          console.log('Page data:', startIndex, '-', endIndex, '=', currentPageSlice.length);
+          
+          // Update all state in order
+          setAllDomains(fullData);
+          setDomains(filteredResults);
+          setFilteredDomains(currentPageSlice);
+          setTotalPages(totalFilteredPages);
+          setResultInfo({
+            page: validFilteredPage,
+            per_page: 25,
+            total_pages: totalFilteredPages,
+            count: currentPageSlice.length,
+            total_count: filteredResults.length
+          });
+        } catch (error) {
+          console.error('Error loading domains:', error);
+          throw error;
+        }
+      }
+    } catch (error) {
+      console.error("Error loading domains:", error);
+      setIsError(true);
+      
+      if (!useMockData) {
+        toast.error("Error loading domain data. Try using sample data.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isAdmin, user?.email, searchQuery, statusFilter, lastSyncTime, applyFilters, currentPage]); // Removed unnecessary dependencies: supabase, mockDomains. Added missing: applyFilters, currentPage
+
+  // Load domains when page, search, or status filter changes
+  useEffect(() => {
+    loadDomains(); // Call without arguments
+  }, [currentPage, loadDomains]);
+
   // Mock users for assignment - in a real app this would come from an API
   const mockUsers = [
     { id: "1", name: "Admin User", email: "admin@example.com" },
@@ -156,129 +419,429 @@ export default function DomainsPage() {
     { id: "10", name: "David Moore", email: "david@example.com" },
   ];
 
-  // Load domain assignments from localStorage on component mount
-  useEffect(() => {
+  // Load assigned users for domains
+  const loadAssignedUsers = useCallback(async () => {
     try {
-      const savedAssignments = localStorage.getItem('domainAssignments');
-      if (savedAssignments) {
-        setDomainAssignments(JSON.parse(savedAssignments));
+      // Get domain assignments from domain_assignments table
+      const { data: assignments } = await supabase
+        .from('domain_assignments')
+        .select('domain_id, user_email');
+      
+      if (assignments) {
+        const assignmentMap: Record<string, string> = {};
+        
+        // Process assignments with proper typing
+        const typedAssignments = (assignments as unknown) as DomainAssignment[];
+        typedAssignments.forEach(assignment => {
+          // For admin view, show all assignments
+          if (isAdmin) {
+            assignmentMap[assignment.domain_id] = assignment.user_email;
+          }
+          // For user view, only show their own assignments
+          else if (assignment.user_email === user?.email) {
+            assignmentMap[assignment.domain_id] = assignment.user_email;
+          }
+        });
+        
+        setAssignedUsers(assignmentMap);
       }
     } catch (error) {
-      console.error('Failed to load domain assignments from localStorage:', error);
+      console.error('Error loading assigned users:', error);
     }
-  }, []);
+  }, [isAdmin, user?.email]); // Remove unnecessary supabase dependency
 
-  // Save domain assignments to localStorage when they change
+  // Load assigned users on mount and after changes
   useEffect(() => {
-    try {
-      localStorage.setItem('domainAssignments', JSON.stringify(domainAssignments));
-    } catch (error) {
-      console.error('Failed to save domain assignments to localStorage:', error);
-    }
-  }, [domainAssignments]);
+    // Initial load
+    loadAssignedUsers();
+
+    // Subscribe to changes
+    const subscription = supabase
+      .channel('domain_assignments_changes')
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'domain_assignments'
+        },
+        () => {
+          // Reload assigned users when assignments change
+          loadAssignedUsers();
+          // Also reload domains to reflect assignment changes
+          loadDomains(); // Call without arguments
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [currentPage, loadAssignedUsers, loadDomains]); // Remove unnecessary supabase dependency
   
-  // Domain to add
+  // Handle dialog state
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      setNewDomain({
+        name: '',
+        redirect: '',
+        isNameValid: false,
+        isRedirectValid: false
+      });
+      setShowNameservers(false);
+      setNameservers([]);
+      setOriginalNameservers([]);
+      setFormError(null);
+      setCurrentNameservers(null);
+    }
+    setIsDialogOpen(open);
+  };
+
+  // Form state
+  const [formError, setFormError] = useState<string | null>(null);
+  const [currentNameservers, setCurrentNameservers] = useState<string[] | null>(null);
   const [newDomain, setNewDomain] = useState({
     name: "",
-    registrationDate: new Date().toISOString().split("T")[0],
-    expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1))
-      .toISOString()
-      .split("T")[0],
+    redirect: "",
+    isNameValid: false,
+    isRedirectValid: false
   });
 
-  // Apply filters to domains
-  const applyFilters = (domains: CloudflareDomain[]) => {
-    let result = [...domains];
-    
-    // Apply status filter
-    if (statusFilter !== "all") {
-      if (statusFilter === "paused") {
-        result = result.filter(domain => domain.paused);
-      } else {
-        // Case insensitive comparison for status
-        result = result.filter(domain => {
-          const status = String(domain.status || "").toLowerCase();
-          return status === statusFilter.toLowerCase() && !domain.paused;
-        });
-      }
-    }
-    
-    // Apply search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      result = result.filter(domain => domain.name.toLowerCase().includes(query));
-    }
-    
-    // Log filtered results for debugging
-    console.log(`Filtered to ${result.length} domains with status: ${statusFilter}`);
-    if (result.length > 0) {
-      console.log('Sample filtered domain:', result[0].name, 'Status:', result[0].status);
-    }
-    
-    return result;
-  };
-
-  // Fetch domains from Cloudflare API or use mock data
-  const loadDomains = async (page: number = 1, useMockData: boolean = false) => {
-    setIsLoading(true);
-    setIsError(false);
-    
+  // Fetch current nameservers when domain name changes
+  const fetchCurrentNameservers = async (domain: string) => {
     try {
-      if (useMockData) {
-        // Use mock data
-        setDomains(mockDomains);
-        setResultInfo(mockResultInfo);
-        setTotalPages(mockResultInfo.total_pages);
-        setUsingMockData(true);
-        toast.info("Using sample data for demonstration");
+      const response = await fetch(`/api/cloudflare/nameservers?domain=${domain}`);
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        setCurrentNameservers(data.nameservers);
       } else {
-        // Fetch from API
-        const result = await fetchDomains(page, 25);
-        
-        if (result.success) {
-          setDomains(result.domains);
-          setResultInfo(result.resultInfo);
-          setTotalPages(result.resultInfo.total_pages);
-          setUsingMockData(false);
-        } else {
-          throw new Error("API request was not successful");
-        }
+        setCurrentNameservers(null);
       }
     } catch (error) {
-      console.error("Error loading domains:", error);
-      setIsError(true);
-      
-      if (!useMockData) {
-        toast.error("Error connecting to Cloudflare API. Try using sample data.");
-      }
-    } finally {
-      setIsLoading(false);
+      console.error('Error fetching nameservers:', error);
+      setCurrentNameservers(null);
     }
   };
 
-  // Load domains on component mount
-  useEffect(() => {
-    loadDomains(currentPage);
-  }, [currentPage]);
-
-  // Apply filters when domains or filter conditions change
-  useEffect(() => {
-    if (domains.length > 0) {
-      setFilteredDomains(applyFilters(domains));
+  // Handle domain name change
+  const handleDomainChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toLowerCase();
+    const validation = validateDomain(value);
+    setNewDomain({
+      ...newDomain,
+      name: value,
+      isNameValid: validation.isValid
+    });
+    
+    // Only fetch nameservers if domain is valid
+    if (validation.isValid) {
+      fetchCurrentNameservers(value);
+    } else {
+      setCurrentNameservers(null);
     }
-  }, [domains, statusFilter, searchQuery]);
+  };
+
+  const handleRedirectChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toLowerCase();
+    const validation = validateDomain(stripUrlPrefixes(value));
+    setNewDomain({
+      ...newDomain,
+      redirect: value,
+      isRedirectValid: validation.isValid
+    });
+  };
+
+  // Function to strip http://, https://, and www.
+  const stripUrlPrefixes = (url: string) => {
+    return url.replace(/^(https?:\/\/)?(www\.)?/, '');
+  };
+
+  // Function to validate domain
+  const validateDomain = (domain: string): { isValid: boolean; error?: string } => {
+    // Check for dashes in domain part (before first dot)
+    const domainPart = domain.split('.')[0];
+    if (domainPart.includes('-')) {
+      return {
+        isValid: false,
+        error: "We do not support dashed domains yet"
+      };
+    }
+
+    // Basic domain validation
+    const domainRegex = /^[a-z0-9][a-z0-9-]*[a-z0-9](\.[a-z0-9-]+)*\.[a-z]{2,}$/i;
+    if (!domainRegex.test(domain)) {
+      return {
+        isValid: false,
+        error: "Please enter a valid domain name (e.g., example.com)"
+      };
+    }
+
+    return { isValid: true };
+  };
+
+  // Trigger full sync with Cloudflare
+
+  // Subscribe to realtime changes
+  useEffect(() => {
+    // Subscribe to both domains and domain_assignments changes
+    const domainsChannel = supabase.channel('domains_changes');
+    
+    // Subscribe to domains changes
+    domainsChannel.on('postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'domains'
+      },
+      (payload) => {
+        console.log('Domains update:', payload);
+        const newDomain = payload.new as { created_by?: string; id?: string };
+        
+        // Reload if:
+        // 1. User is admin
+        // 2. Domain was created by user
+        // 3. Domain is assigned to user
+        if (isAdmin ||
+            (user?.email && (
+              newDomain?.created_by === user.email ||
+              (assignedUsers && assignedUsers[newDomain?.id || ''] === user.email)
+            ))
+        ) {
+          loadDomains(); // Call without arguments
+        }
+      }
+    );
+
+    // Subscribe to domain_assignments changes
+    domainsChannel.on('postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'domain_assignments'
+      },
+      () => {
+        // Reload assignments and domains when assignments change
+        loadAssignedUsers();
+        loadDomains(); // Call without arguments
+      }
+    ).subscribe();
+
+    return () => {
+      domainsChannel.unsubscribe();
+    };
+  }, [currentPage, isAdmin, user?.email, loadDomains, loadAssignedUsers, assignedUsers]);
+
+
 
   // Handle page change
   const handlePageChange = (newPage: number) => {
-    if (newPage > 0 && newPage <= totalPages) {
-      setCurrentPage(newPage);
+    console.log('Page change requested:', {
+      from: currentPage,
+      to: newPage,
+      totalPages: resultInfo?.total_pages,
+      totalData: domains.length // Using filtered domains from domains state
+    });
+
+    // Validate page number using filtered results
+    const maxPage = Math.ceil(domains.length / 25);
+    const validPage = Math.min(Math.max(1, newPage), maxPage);
+    
+    if (validPage !== currentPage) {
+      // Calculate new page slice from filtered results
+      const start = (validPage - 1) * 25;
+      const pageEnd = Math.min(start + 25, domains.length);
+      const pageData = domains.slice(start, pageEnd);
+      
+      // Update state
+      setCurrentPage(validPage);
+      setFilteredDomains(pageData);
+      setResultInfo(prev => {
+        if (!prev) {
+          return {
+            page: validPage,
+            per_page: 25,
+            total_pages: Math.ceil(domains.length / 25),
+            count: pageData.length,
+            total_count: domains.length
+          } as ResultInfo;
+        }
+        return {
+          ...prev,
+          page: validPage,
+          count: pageData.length,
+          total_count: domains.length
+        };
+      });
+      
+      console.log('Page changed:', {
+        page: validPage,
+        showing: pageData.length,
+        range: `${start + 1}-${pageEnd}`,
+        total: domains.length
+      });
+    }
+  };
+  
+  // Handle domain deletion
+  const handleDeleteDomain = async () => {
+    if (!selectedDomainForDeletion) return;
+    
+    // Check confirmation text matches domain name
+    if (deletionConfirmation !== selectedDomainForDeletion.name) {
+      toast.error("Confirmation text does not match domain name");
+      return;
+    }
+    
+    setIsDeleting(true);
+    
+    try {
+      let cloudflareDeletionAttempted = false;
+      let cloudflareDeletionSuccessful = false;
+      let cloudflareErrorMessage = '';
+
+      try {
+        // Get the domain from Supabase first to get the Cloudflare ID
+        const { data: domainData, error: domainError } = await supabase
+          .from('domains')
+          .select('cloudflare_id')
+          .eq('id', selectedDomainForDeletion.id)
+          .single();
+
+        if (domainError || !domainData?.cloudflare_id) {
+          throw new Error('Failed to get Cloudflare ID for domain from Supabase');
+        }
+
+        const cfId = domainData.cloudflare_id;
+        console.log(`[handleDeleteDomain] Attempting to delete domain with internal ID: ${selectedDomainForDeletion.id}, Cloudflare ID: ${cfId}`);
+        cloudflareDeletionAttempted = true;
+
+        // Delete from Cloudflare using the Cloudflare ID
+        const response = await fetch(`/api/cloudflare/domains/${cfId}`, {
+          method: 'DELETE',
+        });
+
+        const data = await response.json();
+        console.log('Cloudflare delete response:', data);
+
+        if (!response.ok || !data.success) {
+          cloudflareErrorMessage = data.error ||
+                                 data.errors?.[0]?.message ||
+                                 data.messages?.[0]?.message ||
+                                 `Cloudflare API request failed with status ${response.status}`;
+          console.error('Cloudflare delete error:', { status: response.status, error: cloudflareErrorMessage, data });
+          // DO NOT throw here if it's an invalid ID error, let Supabase deletion proceed
+          if (!cloudflareErrorMessage.toLowerCase().includes('invalid object identifier') && !cloudflareErrorMessage.toLowerCase().includes('could not route')) {
+             throw new Error(cloudflareErrorMessage); // Throw for other Cloudflare errors
+          }
+        } else {
+          cloudflareDeletionSuccessful = true;
+          console.log(`Successfully deleted domain ${cfId} from Cloudflare.`);
+          // Wait only if Cloudflare deletion was successful
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+      } catch (cfError) {
+         // Catch errors during the Cloudflare fetch/check itself (e.g., network error, failed to get ID)
+         console.error('Error during Cloudflare deletion attempt:', cfError);
+         // If we didn't even get a specific message from CF API, use the caught error's message
+         if (!cloudflareErrorMessage) {
+           cloudflareErrorMessage = cfError instanceof Error ? cfError.message : 'Error during Cloudflare interaction';
+         }
+         // Re-throw unless it's the specific invalid ID error we want to ignore for CF part
+         if (!cloudflareErrorMessage.toLowerCase().includes('invalid object identifier') && !cloudflareErrorMessage.toLowerCase().includes('could not route')) {
+            throw cfError;
+         }
+      }
+
+      // --- Always attempt Supabase Deletion ---
+      console.log(`[handleDeleteDomain] Proceeding to delete domain ID ${selectedDomainForDeletion.id} from Supabase.`);
+      const { error: supabaseError } = await supabaseAdmin
+        .from('domains')
+        .delete()
+        .eq('id', selectedDomainForDeletion.id); // Delete by internal ID
+
+      if (supabaseError) {
+        console.error('Failed to delete domain from Supabase:', supabaseError);
+        // Throw this error as it's critical for DB consistency
+        throw new Error(`Failed to delete domain from database: ${supabaseError.message}`);
+      }
+      console.log(`Successfully deleted domain ID ${selectedDomainForDeletion.id} from Supabase.`);
+
+      // Remove domain from local state
+      const newDomains = allDomains.filter(d => d.id !== selectedDomainForDeletion.id);
+      setAllDomains(newDomains);
+      setDomains(newDomains); // Update the filtered list as well
+      // Recalculate pagination based on the new 'domains' list
+      const newTotalFilteredPages = Math.ceil(newDomains.length / 25);
+      const newValidFilteredPage = Math.min(Math.max(1, currentPage), newTotalFilteredPages || 1);
+      const newStartIndex = (newValidFilteredPage - 1) * 25;
+      const newEndIndex = Math.min(newStartIndex + 25, newDomains.length);
+      const newCurrentPageSlice = newDomains.slice(newStartIndex, newEndIndex);
+
+      setFilteredDomains(newCurrentPageSlice); // Update the displayed page
+      setTotalPages(newTotalFilteredPages || 1); // Update total pages
+      if (newValidFilteredPage !== currentPage) {
+          setCurrentPage(newValidFilteredPage); // Adjust current page if needed
+      }
+       setResultInfo(_prev => ({ // Prefix unused variable with underscore
+           page: newValidFilteredPage,
+           per_page: 25,
+           total_pages: newTotalFilteredPages || 1,
+           count: newCurrentPageSlice.length,
+           total_count: newDomains.length
+       }));
+
+
+      // Remove domain assignments
+      console.log(`[handleDeleteDomain] Deleting assignments for domain ID ${selectedDomainForDeletion.id}.`);
+      const { error: assignmentError } = await supabase
+        .from('domain_assignments')
+        .delete()
+        .eq('domain_id', selectedDomainForDeletion.id); // Delete assignments by internal ID
+
+      if (assignmentError) {
+        // Log but don't necessarily fail the whole operation
+        console.error('Failed to delete domain assignments:', assignmentError);
+        toast.warning(`Domain removed, but failed to clear assignments: ${assignmentError.message}`);
+      } else {
+         console.log(`Successfully deleted assignments for domain ID ${selectedDomainForDeletion.id}.`);
+      }
+
+      // Refresh assignments in UI state
+      await loadAssignedUsers();
+
+      // Show appropriate success/warning message
+      if (cloudflareDeletionAttempted && !cloudflareDeletionSuccessful) {
+         toast.warning(`Removed stale domain ${selectedDomainForDeletion.name} from the platform. It did not exist or was invalid in Cloudflare.`, {
+            description: `Cloudflare error: ${cloudflareErrorMessage}`
+         });
+      } else {
+         toast.success(`Domain ${selectedDomainForDeletion.name} deleted successfully from Cloudflare and the platform.`);
+      }
+
+      // Close the dialog and reset
+      setIsDeleteDialogOpen(false);
+      setSelectedDomainForDeletion(null);
+      setDeletionConfirmation('');
+
+    } catch (error) {
+      // Catch errors from Supabase deletion or unexpected errors
+      console.error('Error during the deletion process:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error during deletion';
+      toast.error(`Failed to complete deletion: ${errorMessage}`, {
+        description: 'The domain might be partially deleted. Please check Supabase and Cloudflare.'
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   // Format date from Cloudflare timestamp
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string, includeTime: boolean = false) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString();
+    return includeTime ?
+      date.toLocaleString() :
+      date.toLocaleDateString();
   };
 
   // Reset filters
@@ -315,25 +878,252 @@ export default function DomainsPage() {
   };
 
   // Handle domain add (placeholder as we can't actually add domains via API)
-  const handleAddDomain = () => {
-    if (!newDomain.name) {
-      toast.error("Domain name is required");
-      return;
-    }
+  const handleAddDomain = async () => {
+    try {
+      setIsSubmitting(true);
 
-    toast.info("Adding domains is not supported via this interface. Please use the Cloudflare dashboard.");
-    setIsDialogOpen(false);
+      // Clean up domain and redirect
+      const cleanDomain = stripUrlPrefixes(newDomain.name);
+      const cleanRedirect = newDomain.redirect ? stripUrlPrefixes(newDomain.redirect) : '';
+
+      // Both fields are required
+      if (!cleanDomain || !cleanRedirect) {
+        toast.error("Both domain and redirect are required");
+        return;
+      }
+
+      // Validate domain
+      const domainValidation = validateDomain(cleanDomain);
+      if (!domainValidation.isValid) {
+        toast.error(domainValidation.error || "Invalid domain name");
+        return;
+      }
+
+      // Validate redirect
+      if (!cleanRedirect.match(/^[a-z0-9][a-z0-9-]*[a-z0-9](\.[a-z0-9-]+)*\.[a-z]{2,}$/i)) {
+        toast.error("Please enter a valid redirect domain");
+        return;
+      }
+
+      // Check if domain already exists
+      const existingDomain = domains.find(d =>
+        stripUrlPrefixes(d.name).toLowerCase() === cleanDomain.toLowerCase()
+      );
+      if (existingDomain) {
+        toast.error("This domain has already been added");
+        return;
+      }
+
+      // Call Cloudflare API to add domain
+      const response = await fetch('/api/cloudflare/zone-management', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: cleanDomain,
+          redirect_url: `https://${cleanRedirect}`
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        const error = result.error?.toLowerCase() || '';
+        if (error.includes('already exists')) {
+          setFormError("This domain already exists");
+          return;
+        }
+        throw new Error(result.error || 'Failed to add domain');
+      }
+
+      if (result.success) {
+        // Add domain to Supabase through API
+        const supabaseResponse = await fetch('/api/supabase/domains', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            cloudflare_id: result.domain.id,
+            name: result.domain.name,
+            status: result.domain.status,
+            paused: result.domain.paused,
+            type: result.domain.type,
+            created_on: result.domain.created_on,
+            modified_on: result.domain.modified_on,
+            last_synced: new Date().toISOString(),
+            redirect_url: result.domain.redirect_url,
+            created_by: user?.email || null
+          })
+        });
+
+        if (!supabaseResponse.ok) {
+          const errorData = await supabaseResponse.json();
+          console.error('Failed to add domain to Supabase:', errorData);
+          throw new Error(errorData.error || 'Failed to add domain to database');
+        }
+
+        const insertedData = await supabaseResponse.json();
+        console.log('Successfully inserted domain:', insertedData);
+
+        // Assign domain to the user who created it
+        if (user?.email) {
+          try {
+            // Use the ID returned from the Supabase domain insertion
+            const supabaseDomainId = insertedData.data?.id;
+            if (!supabaseDomainId) { // Check specifically for the ID
+              console.error('Supabase domain insertion response missing data.id:', insertedData);
+              toast.error('Failed to get internal domain ID after creation. Cannot assign domain.');
+              // Potentially close the dialog or handle UI state appropriately here
+              setIsSubmitting(false); // Ensure submit button is re-enabled
+              return; // Stop the assignment process
+            }
+
+            const assignmentPayload = {
+              domain_id: supabaseDomainId,
+              user_email: user.email
+            };
+
+            console.log('Preparing to call assignment API:', {
+              url: '/api/supabase/domain-assignments',
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(assignmentPayload)
+            });
+
+            // Use a dedicated API endpoint to create the assignment with admin privileges
+            const assignResponse = await fetch('/api/supabase/domain-assignments', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(assignmentPayload)
+            });
+
+            // --- Enhanced Error Handling for Assignment API Response ---
+            if (!assignResponse.ok) {
+              const responseStatus = assignResponse.status;
+              const responseHeaders: Record<string, string> = {};
+              assignResponse.headers.forEach((value, key) => {
+                responseHeaders[key] = value;
+              });
+
+              let errorBodyText = 'Could not read error response body.';
+              let parsedErrorJson: Record<string, unknown> | null = null;
+              try {
+                // Attempt to read the body as text first
+                errorBodyText = await assignResponse.text();
+                console.log('Raw error response text from assignment API:', errorBodyText);
+                // Then try to parse it as JSON
+                try {
+                  parsedErrorJson = JSON.parse(errorBodyText);
+                } catch {
+                  console.warn('Assignment API error response was not valid JSON.');
+                }
+              } catch (readError) {
+                console.error('Failed to read error response body:', readError);
+              }
+
+              // Determine the best error message to show
+              const errorMessage = parsedErrorJson?.error // Use JSON error if available
+                                   || (errorBodyText.length < 200 ? errorBodyText : null) // Use short text body if available
+                                   || `API request failed with status ${responseStatus}`; // Fallback
+
+              console.error('Domain assignment API error details:', {
+                status: responseStatus,
+                headers: responseHeaders,
+                bodyText: errorBodyText,
+                parsedJsonError: parsedErrorJson?.error,
+                finalMessage: errorMessage
+              });
+
+              toast.warning(`Domain created but assignment failed: ${errorMessage}`);
+
+            } else {
+              // Success case
+              const assignResult = await assignResponse.json(); // Assume success response is JSON
+              console.log('Domain assignment API succeeded:', assignResult);
+              
+              // Update assignments in memory
+              setAssignedUsers(prev => ({
+                ...prev,
+                [supabaseDomainId]: user.email // Use Supabase ID for local state update
+              }));
+              
+              // Force refresh the domain list to update with assignments
+              setTimeout(() => {
+                loadDomains(); // Call without arguments
+              }, 1000);
+            }
+          } catch (assignError) {
+            console.error('Exception in domain assignment:', assignError);
+            toast.warning('Domain created but assignment failed');
+          }
+        }
+
+        // Add domain to local state
+
+        // Show nameservers if available
+        if (result.nameservers?.length) {
+          setNameservers(result.nameservers);
+          setOriginalNameservers(result.originalNameservers || []);
+          setShowNameservers(true);
+        } else {
+          setIsDialogOpen(false);
+          toast.success('Domain added successfully');
+          
+          // Reload domains to ensure proper filtering
+          loadDomains(false);
+        }
+
+        // Show nameservers
+        if (result.nameservers?.length) {
+          setNameservers(result.nameservers);
+          setOriginalNameservers(result.originalNameservers || []);
+          setShowNameservers(true);
+        } else {
+          setIsDialogOpen(false);
+          toast.success('Domain added successfully');
+        }
+      } else {
+        throw new Error(result.error || 'Failed to add domain');
+      }
+    } catch (error) {
+      console.error('Error adding domain:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to add domain');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // View DNS records for a domain
-  const viewDnsRecords = (domainId: string, domainName: string) => {
-    // Store domain info in localStorage to use in DNS records page
-    localStorage.setItem('selectedDomain', JSON.stringify({
-      id: domainId,
-      name: domainName
-    }));
-    
-    router.push('/dns-records');
+  const viewDnsRecords = async (domainId: string, domainName: string) => {
+    try {
+      // Get the Cloudflare ID from Supabase
+      const { data: domainData, error: domainError } = await supabase
+        .from('domains')
+        .select('cloudflare_id')
+        .eq('id', domainId)
+        .single();
+
+      if (domainError || !domainData?.cloudflare_id) {
+        toast.error('Failed to get domain information');
+        return;
+      }
+
+      // Store domain info in localStorage to use in DNS records page
+      localStorage.setItem('selectedDomain', JSON.stringify({
+        id: domainId,
+        name: domainName,
+        cloudflare_id: domainData.cloudflare_id
+      }));
+      
+      router.push('/dns-records');
+    } catch (error) {
+      console.error('Error viewing DNS records:', error);
+      toast.error('Failed to load DNS records');
+    }
   };
 
   // Get domain status display text
@@ -348,66 +1138,151 @@ export default function DomainsPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <h1 className="text-3xl font-bold tracking-tight">Domains</h1>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => loadDomains(currentPage, false)}
-              disabled={isLoading}
-              className="flex items-center gap-1"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </Button>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="flex items-center gap-1 bg-green-600 hover:bg-green-700"
-                >
-                  <PlusCircle className="h-4 w-4" />
-                  Add Domain
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Add New Domain</DialogTitle>
-                  <DialogDescription>
-                    Enter the details of the domain you want to add to the system.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="name" className="text-right">
-                      Domain Name
-                    </Label>
-                    <Input
-                      id="name"
-                      className="col-span-3"
-                      value={newDomain.name}
-                      onChange={(e) =>
-                        setNewDomain({ ...newDomain, name: e.target.value })
-                      }
-                      placeholder="example.com"
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleAddDomain}>Add Domain</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            
+            <Dialog open={isDialogOpen} onOpenChange={handleOpenChange}>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="flex items-center gap-1 bg-green-600 hover:bg-green-700"
+                    >
+                      <PlusCircle className="h-4 w-4" />
+                      Add Domain
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-2xl">
+                {!showNameservers ? (
+                  <>
+                    <DialogHeader className="mb-6">
+                      <DialogTitle>Add New Domain</DialogTitle>
+                      <DialogDescription className="mt-2">
+                        Enter the domain details. Both domain and redirect are required. The system will automatically strip http://, https://, and www. prefixes.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {formError && (
+                      <Alert variant="destructive" className="mb-6">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>{formError}</AlertDescription>
+                      </Alert>
+                    )}
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      handleAddDomain();
+                    }}>
+                      <div className="space-y-6">
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-5 items-center gap-8">
+                            <Label htmlFor="name" className="text-right text-sm font-medium">
+                              Domain Name
+                            </Label>
+                            <Input
+                              id="name"
+                              className="col-span-4"
+                              value={newDomain.name}
+                              onChange={handleDomainChange}
+                              placeholder="example.com (without http:// or www.)"
+                            />
+                          </div>
+                          {/* Current nameservers will be shown in success dialog */}
+                        </div>
+                        <div className="grid grid-cols-5 items-center gap-8">
+                          <Label htmlFor="redirect" className="text-right text-sm font-medium">
+                            Redirect To
+                          </Label>
+                          <Input
+                            id="redirect"
+                            className="col-span-4"
+                            value={newDomain.redirect}
+                            onChange={handleRedirectChange}
+                            placeholder="target-domain.com or target-domain.com/path (required)"
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter className="mt-8">
+                        <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+                          Cancel
+                        </Button>
+                        <Button
+                          type="submit"
+                          disabled={isSubmitting || !newDomain.isNameValid || !newDomain.isRedirectValid}
+                          className={!newDomain.isNameValid || !newDomain.isRedirectValid ? "opacity-50 cursor-not-allowed" : ""}
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Adding Domain...
+                            </>
+                          ) : (
+                            "Add Domain"
+                          )}
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </>
+                ) : (
+                  <>
+                    <DialogHeader>
+                      <DialogTitle>Domain Added Successfully</DialogTitle>
+                      <DialogDescription>
+                        Update your domain&apos;s nameservers at your registrar to complete the setup.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-6 my-6">
+                      <div>
+                        <h3 className="text-sm font-medium mb-2">Current Nameservers</h3>
+                        <div className="bg-slate-50 p-4 rounded-md border border-slate-200">
+                          {currentNameservers && currentNameservers.length > 0 ? (
+                            <ul className="space-y-1">
+                              {currentNameservers.map((ns, i) => (
+                                <li key={i} className="font-mono text-sm text-slate-600">{ns}</li>
+                              ))}
+                            </ul>
+                          ) : originalNameservers?.length ? (
+                            <ul className="space-y-1">
+                              {originalNameservers.map((ns, i) => (
+                                <li key={i} className="font-mono text-sm text-slate-600">{ns}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-slate-500">N/A</p>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-medium mb-2">New Cloudflare Nameservers</h3>
+                        <div className="bg-slate-50 p-4 rounded-md border border-slate-200">
+                          <ul className="space-y-1">
+                            {nameservers.map((ns, i) => (
+                              <li key={i} className="font-mono text-sm text-emerald-600">{ns}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                    <Alert className="border-yellow-500 bg-yellow-50">
+                      <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                      <AlertDescription className="ml-2 text-yellow-700">
+                        DNS propagation may take up to 24-48 hours to complete after updating nameservers.
+                      </AlertDescription>
+                    </Alert>
+                    <DialogFooter>
+                      <Button onClick={() => handleOpenChange(false)}>
+                        Close
+                      </Button>
+                    </DialogFooter>
+                  </>
+                )}
+                  </DialogContent>
+                </Dialog>
           </div>
         </div>
+
 
         {usingMockData && (
           <div className="bg-yellow-50 p-4 mb-6 rounded-md border border-yellow-200">
             <p className="text-yellow-800">
               Currently showing sample data. 
-              <Button variant="link" className="p-0 h-auto ml-2" onClick={() => loadDomains(currentPage, false)}>
+              <Button variant="link" className="p-0 h-auto ml-2" onClick={() => loadDomains(false)}>
                 Try loading real data
               </Button>
             </p>
@@ -450,18 +1325,39 @@ export default function DomainsPage() {
           <Button variant="outline" onClick={resetFilters} className="sm:w-auto">Reset</Button>
         </div>
 
-        {isLoading && domains.length === 0 ? (
+        {isLoading ? (
           <div className="flex justify-center items-center h-64 bg-background/40 rounded-lg border shadow-sm">
-            <div className="flex flex-col items-center gap-2">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-              <p className="text-lg">Loading domains...</p>
+            <div className="text-center space-y-4">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+              <p className="text-lg text-muted-foreground">Loading domains...</p>
             </div>
           </div>
         ) : isError ? (
           <div className="flex justify-center items-center h-64 bg-background/40 rounded-lg border shadow-sm">
             <div className="text-center">
-              <p className="text-lg text-red-600 mb-4">Failed to load domains</p>
-              <Button onClick={() => loadDomains(currentPage, true)}>Use Sample Data</Button>
+              <p className="text-lg text-red-600 mb-2">Failed to load domains</p>
+              <p className="text-sm text-muted-foreground mb-4">There was an error fetching the domain data</p>
+              <div className="flex gap-2 justify-center">
+                <Button
+                  variant="outline"
+                  onClick={() => loadDomains(false)}
+                >
+                  Try Again
+                </Button>
+                <Button
+                  onClick={() => {
+                    console.log("Loading sample data");
+                    setDomains([...mockDomains]);
+                    setResultInfo({...mockResultInfo});
+                    setTotalPages(mockResultInfo.total_pages);
+                    setUsingMockData(true);
+                    setIsError(false);
+                    toast.info("Using sample data for demonstration");
+                  }}
+                >
+                  Use Sample Data
+                </Button>
+              </div>
             </div>
           </div>
         ) : (
@@ -470,36 +1366,107 @@ export default function DomainsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[25%]">Domain Name</TableHead>
-                    <TableHead className="w-[15%]">Created On</TableHead>
-                    <TableHead className="w-[15%]">Modified On</TableHead>
-                    <TableHead className="w-[13%]">Status</TableHead>
-                    <TableHead className="w-[12%]">Assigned User</TableHead>
-                    <TableHead className="w-[20%] text-right">Actions</TableHead>
+                    <TableHead className="w-[20%]">Domain Name</TableHead>
+                    <TableHead className="w-[15%]">Redirect</TableHead>
+                    <TableHead className="w-[10%]">Created On</TableHead>
+                    <TableHead className="w-[10%]">Modified On</TableHead>
+                    <TableHead className="w-[10%]">Last Synced</TableHead>
+                    <TableHead className="w-[10%]">Status</TableHead>
+                    <TableHead className="w-[10%]">Assigned User</TableHead>
+                    <TableHead className="w-[15%] text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredDomains.length === 0 ? (
+                  {!filteredDomains || filteredDomains.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8">
-                        No domains found matching your criteria
+                      <TableCell colSpan={8} className="text-center py-8">
+                        {statusFilter !== "all" ? (
+                          <div>
+                            <p className="mb-2">No domains found with status: <strong>{statusFilter}</strong></p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setStatusFilter("all");
+                                toast.info("Showing all domains");
+                              }}
+                            >
+                              Show All Domains
+                            </Button>
+                          </div>
+                        ) : (
+                          searchQuery.trim() ? (
+                            <p>No domains found matching search: <strong>{searchQuery}</strong></p>
+                          ) : (
+                            !isAdmin && resultInfo?.total_count === 0 ? (
+                              <div className="text-center">
+                                <p className="mb-4">Try adding some domains!</p>
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  className="bg-green-600 hover:bg-green-700"
+                                  onClick={() => setIsDialogOpen(true)}
+                                >
+                                  <PlusCircle className="h-4 w-4 mr-2" />
+                                  Add Domain
+                                </Button>
+                              </div>
+                            ) : (
+                              <p>No domains found matching your criteria</p>
+                            )
+                          )
+                        )}
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredDomains.map((domain) => (
                       <TableRow key={domain.id}>
                         <TableCell className="font-medium">{domain.name}</TableCell>
+                        <TableCell>
+                          {domain.redirect_url ? (
+                            <a
+                              href={domain.redirect_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline text-sm max-w-[200px] truncate group"
+                              title={domain.redirect_url}
+                            >
+                              <span className="truncate">
+                                {domain.redirect_url.replace(/^https?:\/\/(www\.)?/, '')}
+                              </span>
+                              <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </a>
+                          ) : domain.last_synced ? (
+                            <span className="text-gray-500 text-sm">No redirect</span>
+                          ) : (
+                            <span className="text-gray-500 text-sm">Loading...</span>
+                          )}
+                        </TableCell>
                         <TableCell>{formatDate(domain.created_on)}</TableCell>
-                        <TableCell>{formatDate(domain.modified_on)}</TableCell>
+                        <TableCell>{domain.modified_on ? formatDate(domain.modified_on) : 'N/A'}</TableCell>
+                        <TableCell>
+                          {isSyncing ? (
+                            <span className="text-gray-500 text-sm flex items-center gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Syncing...
+                            </span>
+                          ) : domain.last_synced ? (
+                            <span title={formatDate(domain.last_synced, true)}>
+                              {formatDate(domain.last_synced)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-500 text-sm">Not synced</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <span className={getStatusStyle(domain.status, domain.paused)}>
                             {getDomainStatusText(domain.status, domain.paused)}
                           </span>
                         </TableCell>
                         <TableCell>
-                          {domainAssignments[domain.id] ? (
+                          {assignedUsers[domain.id] ? (
                             <span className="text-blue-600 text-sm font-medium">
-                              {mockUsers.find(u => u.id === domainAssignments[domain.id])?.name || domainAssignments[domain.id]}
+                              {assignedUsers[domain.id]}
                             </span>
                           ) : (
                             <span className="text-gray-500 text-sm">Unassigned</span>
@@ -509,20 +1476,40 @@ export default function DomainsPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => viewDnsRecords(domain.id, domain.name)}
+                            onClick={() => {
+                              setIsLoading(true);
+                              viewDnsRecords(domain.id, domain.name)
+                                .finally(() => setIsLoading(false));
+                            }}
                           >
                             DNS Records
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedDomainForAssignment(domain);
-                              setIsAssignDialogOpen(true);
-                            }}
-                          >
-                            Assign
-                          </Button>
+                          <>
+                            {isAdmin && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedDomainForAssignment(domain);
+                                  setIsAssignDialogOpen(true);
+                                }}
+                              >
+                                Assign
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedDomainForDeletion(domain);
+                                setIsDeleteDialogOpen(true);
+                                setDeletionConfirmation('');
+                              }}
+                              className="hover:bg-red-100 hover:text-red-800 border-red-200 text-red-700"
+                            >
+                              Delete
+                            </Button>
+                          </>
                         </TableCell>
                       </TableRow>
                     ))
@@ -531,12 +1518,18 @@ export default function DomainsPage() {
               </Table>
             </div>
 
-            {/* Pagination */}
-            {resultInfo && resultInfo.total_pages > 1 && (
-              <div className="flex justify-between items-center pt-4">
-                <div className="text-sm text-muted-foreground">
-                  Showing {filteredDomains.length} of {resultInfo.total_count} domains
-                </div>
+            {/* Pagination controls */}
+            {console.log('Rendering pagination:', {
+              filteredLength: filteredDomains.length,
+              totalCount: resultInfo?.total_count,
+              totalPages: totalPages, // Use the state variable
+              currentPage
+            })}
+            <div className="flex justify-between items-center pt-4">
+              <div className="text-sm text-muted-foreground">
+                {`Showing ${filteredDomains.length} of ${resultInfo?.total_count || 0} domains`}
+              </div>
+              {(resultInfo?.total_pages || 0) > 1 && (
                 <div className="flex space-x-2">
                   <Button
                     variant="outline"
@@ -548,20 +1541,21 @@ export default function DomainsPage() {
                   </Button>
                   <div className="flex items-center space-x-1">
                     <span className="text-sm">
-                      Page {currentPage} of {totalPages}
+                      Page {currentPage} of {resultInfo?.total_pages || 1}
                     </span>
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
+                    disabled={currentPage === (resultInfo?.total_pages || 1)}
                   >
                     Next
                   </Button>
                 </div>
+              )}
               </div>
-            )}
+            
           </>
         )}
       </div>
@@ -599,15 +1593,32 @@ export default function DomainsPage() {
                 .map(user => (
                   <Button
                     key={user.id}
-                    variant={domainAssignments[selectedDomainForAssignment?.id || ''] === user.id ? "default" : "outline"}
+                    variant="outline"
                     className="justify-start text-left py-6 h-auto"
-                    onClick={() => {
+                    onClick={async () => {
                       if (selectedDomainForAssignment) {
-                        const newAssignments = { ...domainAssignments };
-                        newAssignments[selectedDomainForAssignment.id] = user.id;
-                        setDomainAssignments(newAssignments);
-                        toast.success(`${selectedDomainForAssignment.name} assigned to ${user.name}`);
-                        setIsAssignDialogOpen(false);
+                        try {
+                          // Create new assignment in domain_assignments table
+                          const { error } = await supabase
+                            .from('domain_assignments')
+                            .insert({
+                              domain_id: selectedDomainForAssignment.id,
+                              user_email: user.email,
+                              created_by: user?.email || null
+                            });
+
+                          if (error) throw error;
+
+                          toast.success(`${selectedDomainForAssignment.name} assigned to ${user.name}`);
+                          setIsAssignDialogOpen(false);
+                          
+                          // Reload domains and assignments to reflect changes
+                          await loadDomains(false);
+                          await loadAssignedUsers();
+                        } catch (error) {
+                          console.error('Error assigning domain:', error);
+                          toast.error('Failed to assign domain');
+                        }
                       }
                     }}
                   >
@@ -629,7 +1640,7 @@ export default function DomainsPage() {
                 !user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
               ).length === mockUsers.length && (
                 <div className="text-center py-6 text-muted-foreground">
-                  No users found matching "{userSearchQuery}"
+                  No users found matching &quot;{userSearchQuery}&quot;
                 </div>
               )}
             </div>
@@ -642,16 +1653,42 @@ export default function DomainsPage() {
             >
               Cancel
             </Button>
-            {selectedDomainForAssignment && domainAssignments[selectedDomainForAssignment.id] && (
+            {selectedDomainForAssignment && assignedUsers[selectedDomainForAssignment.id] && (
               <Button
                 variant="destructive"
-                onClick={() => {
+                onClick={async () => {
                   if (selectedDomainForAssignment) {
-                    const newAssignments = { ...domainAssignments };
-                    delete newAssignments[selectedDomainForAssignment.id];
-                    setDomainAssignments(newAssignments);
-                    toast.info(`${selectedDomainForAssignment.name} unassigned`);
-                    setIsAssignDialogOpen(false);
+                    try {
+                      const currentAssignedUser = assignedUsers[selectedDomainForAssignment.id];
+                      if (!currentAssignedUser) {
+                        throw new Error('No user assigned to this domain');
+                      }
+
+                      // Delete assignment from domain_assignments table
+                      const { error } = await supabase
+                        .from('domain_assignments')
+                        .delete()
+                        .eq('domain_id', selectedDomainForAssignment.id)
+                        .eq('user_email', currentAssignedUser);
+
+                      if (error) throw error;
+
+                      toast.info(`${selectedDomainForAssignment.name} unassigned from ${currentAssignedUser}`);
+                      setIsAssignDialogOpen(false);
+                      
+                      // Update local state
+                      setAssignedUsers(prev => {
+                        const newAssignments = { ...prev };
+                        delete newAssignments[selectedDomainForAssignment.id];
+                        return newAssignments;
+                      });
+
+                      // Reload domains to reflect changes
+                      await loadDomains(false);
+                    } catch (error) {
+                      console.error('Error unassigning domain:', error);
+                      toast.error('Failed to unassign domain');
+                    }
                   }
                 }}
                 className="px-6 py-2"
@@ -660,6 +1697,68 @@ export default function DomainsPage() {
               </Button>
             )}
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Domain deletion confirmation dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader className="mb-6">
+            <DialogTitle>Delete Domain</DialogTitle>
+            <DialogDescription className="mt-2">
+              {selectedDomainForDeletion && (
+                <>
+                  <span className="block mb-4">
+                    This will <strong>permanently delete</strong> the domain <strong>{selectedDomainForDeletion.name}</strong> from Cloudflare and remove all of its assignments.
+                  </span>
+                  <span className="block text-red-600 font-medium">
+                    This action cannot be undone.
+                  </span>
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            handleDeleteDomain();
+          }}>
+            <div className="space-y-6">
+              <div>
+                <Label htmlFor="domain-confirmation" className="text-sm font-medium">
+                  To confirm, type the domain name exactly:
+                </Label>
+                <Input
+                  id="domain-confirmation"
+                  value={deletionConfirmation}
+                  onChange={(e) => setDeletionConfirmation(e.target.value)}
+                  placeholder={selectedDomainForDeletion?.name}
+                  className="mt-2"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="mt-8">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsDeleteDialogOpen(false);
+                  setSelectedDomainForDeletion(null);
+                  setDeletionConfirmation('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="destructive"
+                disabled={isDeleting || !selectedDomainForDeletion || deletionConfirmation !== selectedDomainForDeletion.name}
+              >
+                {isDeleting ? "Deleting..." : "Delete Domain"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </DashboardLayout>

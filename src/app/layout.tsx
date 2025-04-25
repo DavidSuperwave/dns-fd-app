@@ -1,41 +1,35 @@
-import { Toaster } from "sonner";
 import "./globals.css";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import Head from "next/head";
+import { cookies } from 'next/headers';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'; // Use server component client
+import { AuthProvider } from "../components/auth/auth-provider";
 
-// Import Inter font
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-inter",
-});
+export const dynamic = 'force-dynamic'; // Ensure layout is dynamic for session checking
 
 export const metadata: Metadata = {
-  title: "DNS-FD App",
-  description: "Cloudflare DNS Management Application",
+  title: "Superwave",
+  description: "Manage DNS records and domains",
   icons: {
-    icon: "/favicon.ico",
-  },
+    icon: '/favicon.png'
+  }
 };
 
-export default function RootLayout({
+export default async function RootLayout({ // Make layout async
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const cookieStore = cookies();
+  const supabase = createServerComponentClient({ cookies: () => cookieStore });
+  const { data: { session } } = await supabase.auth.getSession();
+
+  // Pass the initial session to the AuthProvider
   return (
-    <html lang="en" suppressHydrationWarning className={inter.variable}>
-      <head>
-        {/* Adding Geist font (alternatively, we could use actual font files in the project) */}
-        <link 
-          rel="stylesheet" 
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" 
-        />
-      </head>
-      <body className="font-sans">
-        {children}
-        <Toaster position="top-right" />
+    <html lang="en">
+      <body>
+        <AuthProvider initialSession={session}>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

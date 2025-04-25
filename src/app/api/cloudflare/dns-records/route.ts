@@ -3,16 +3,21 @@ import { NextResponse } from 'next/server';
 // Cloudflare API endpoints
 const CLOUDFLARE_API_URL = 'https://api.cloudflare.com/client/v4';
 
-// Cloudflare authentication credentials
-// Using Global API Key instead of API Token for maximum permissions
-const CLOUDFLARE_EMAIL = 'dns@superwave.ai';
-const CLOUDFLARE_API_KEY = 'd487bd6276e1ee1e56c03f25ea90a5c3fded0';
+// Cloudflare authentication credentials - using hardcoded values for consistency
+const CLOUDFLARE_API_TOKEN = '3zYP5-L3oxluS5N3VNJNH7UXxh9NbxbyU0psh8uG';
 
-// Common headers for all requests
-const headers = {
-  'X-Auth-Email': CLOUDFLARE_EMAIL,
-  'X-Auth-Key': CLOUDFLARE_API_KEY,
-  'Content-Type': 'application/json',
+// Log that we're using hardcoded values
+console.log('[Cloudflare API DNS] Using hardcoded API Token for consistency');
+
+// Helper function to get authentication headers - using API Token authentication
+const getAuthHeaders = (): HeadersInit => {
+  // Create API Token authentication headers
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN.trim()}`
+  };
+  
+  return headers;
 };
 
 // Environment flag for using mock data instead of real API calls
@@ -38,26 +43,39 @@ const logApiResponse = async (response: Response, context: string) => {
     if (!data.success && data.errors && data.errors.length > 0) {
       console.error(`[Cloudflare API ${context}] ERROR DETAILS:`, JSON.stringify(data.errors, null, 2));
       
-      data.errors.forEach((error: any, index: number) => {
+      // Define a type for Cloudflare errors
+      interface CloudflareError {
+        code: number;
+        message: string;
+        error_chain?: { code: number; message: string }[];
+      }
+      data.errors.forEach((error: CloudflareError, index: number) => {
         console.error(`[Cloudflare API ${context}] Error ${index + 1}:`, {
           code: error.code,
           message: error.message,
-          error_chain: error.error_chain || 'None'
+          error_chain: error.error_chain ? JSON.stringify(error.error_chain) : 'None' // Stringify chain for logging
         });
       });
     }
     
     return data;
   } catch (error) {
-    console.error(`[Cloudflare API ${context}] Failed to log response:`, error);
+    console.error(`[Cloudflare API ${context}] Failed to log response:`, error instanceof Error ? error.message : 'Unknown error');
     return null;
   }
 };
 
+// Define a type for the expected error response structure
+interface CloudflareErrorResponse {
+  errors: { code: number; message: string }[];
+  success: boolean;
+  // Potentially other fields
+}
+
 // Extract detailed error message from Cloudflare API response
-function extractErrorDetails(data: any): string {
-  if (!data || !data.errors || !data.errors.length) {
-    return 'Unknown API error';
+function extractErrorDetails(data: CloudflareErrorResponse | null): string {
+  if (!data || !Array.isArray(data.errors) || data.errors.length === 0) {
+    return 'Unknown API error or malformed error response';
   }
   
   const primaryError = data.errors[0];
@@ -78,8 +96,8 @@ function mockDnsRecordsResponse(zoneId: string, page: string, perPage: string) {
   return NextResponse.json({
     dnsRecords: [],
     resultInfo: {
-      page: parseInt(page),
-      per_page: parseInt(perPage),
+      page: parseInt(page, 10), // Add radix parameter
+      per_page: parseInt(perPage, 10), // Add radix parameter
       total_count: 0,
       count: 0,
       total_pages: 0
@@ -90,9 +108,19 @@ function mockDnsRecordsResponse(zoneId: string, page: string, perPage: string) {
 }
 
 // Helper function for mock DNS record creation
-function mockDnsRecordCreationResponse(zoneId: string, record: any, warningMessage?: string) {
+// Define a type for the DNS record payload used in mock creation
+interface MockDnsRecordPayload {
+  name: string;
+  type: string;
+  content: string;
+  proxied?: boolean;
+  ttl?: number;
+  priority?: number;
+}
+
+function mockDnsRecordCreationResponse(zoneId: string, record: MockDnsRecordPayload, warningMessage?: string) {
   console.log(`[Cloudflare API] Returning mock DNS record creation response for zone ${zoneId}`);
-  
+
   const mockRecord = {
     id: `mock-${Date.now()}`,
     zone_id: zoneId,
@@ -134,7 +162,7 @@ export async function GET(request: Request) {
   try {
     // Extract query parameters
     const url = new URL(request.url);
-    const zoneId = url.searchParams.get('zone_id');
+    const zoneId = url.searchParams.get('zoneId') || url.searchParams.get('zone_id');
     const page = url.searchParams.get('page') || '1';
     const perPage = url.searchParams.get('per_page') || '100';
     const recordType = url.searchParams.get('type'); // Optional: filter by record type (A, CNAME, etc.)
@@ -151,14 +179,14 @@ export async function GET(request: Request) {
     }
     
     console.log(`[Cloudflare API] Fetching DNS records for zone ${zoneId}: page=${page}, perPage=${perPage}${recordType ? `, type=${recordType}` : ''}`);
-    console.log(`[Cloudflare API] Using Global API Key authentication with email: ${CLOUDFLARE_EMAIL}`);
+    console.log(`[Cloudflare API] Using API Token authentication`);
     
     let apiUrl = `${CLOUDFLARE_API_URL}/zones/${zoneId}/dns_records?page=${page}&per_page=${perPage}`;
     if (recordType) {
       apiUrl += `&type=${recordType}`;
     }
     
-    const response = await fetch(apiUrl, { headers });
+    const response = await fetch(apiUrl, { headers: getAuthHeaders() });
     
     // Log the raw API response for debugging
     const data = await logApiResponse(response, 'GET dns_records');
@@ -182,8 +210,8 @@ export async function GET(request: Request) {
       return NextResponse.json({
         dnsRecords: [],
         resultInfo: {
-          page: parseInt(page),
-          per_page: parseInt(perPage),
+          page: parseInt(page, 10),
+          per_page: parseInt(perPage, 10),
           total_count: 0,
           count: 0,
           total_pages: 0
@@ -205,8 +233,8 @@ export async function GET(request: Request) {
       return NextResponse.json({
         dnsRecords: [],
         resultInfo: {
-          page: parseInt(page),
-          per_page: parseInt(perPage),
+          page: parseInt(page, 10),
+          per_page: parseInt(perPage, 10),
           total_count: 0,
           count: 0,
           total_pages: 0
@@ -240,7 +268,18 @@ export async function POST(request: Request) {
   try {
     // Extract query parameters and body
     const url = new URL(request.url);
-    const zoneId = url.searchParams.get('zone_id');
+    const body = await request.json();
+    
+    // Support both parameter locations - from body or query params
+    const zoneId = body.zoneId || url.searchParams.get('zoneId') || url.searchParams.get('zone_id');
+    const record = {
+      type: body.type,
+      name: body.name,
+      content: body.content,
+      ttl: body.ttl,
+      priority: body.priority,
+      proxied: body.proxied
+    };
     
     if (!zoneId) {
       return NextResponse.json(
@@ -251,15 +290,11 @@ export async function POST(request: Request) {
     
     if (USE_MOCK_DATA) {
       // For mock mode, return a success response
-      const record = await request.json();
-      return mockDnsRecordCreationResponse(zoneId, record);
+      return mockDnsRecordCreationResponse(zoneId, record); // Use already parsed record
     }
     
-    // Get the DNS record data from the request body
-    const record = await request.json();
-    
     console.log(`[Cloudflare API] Creating DNS record for zone ${zoneId}:`, record);
-    console.log(`[Cloudflare API] Using Global API Key authentication with email: ${CLOUDFLARE_EMAIL}`);
+    console.log(`[Cloudflare API] Using API Token authentication`);
     
     // Validate required record fields
     if (!record.type || !record.name || !record.content) {
@@ -274,7 +309,7 @@ export async function POST(request: Request) {
         `${CLOUDFLARE_API_URL}/zones/${zoneId}/dns_records`,
         { 
           method: 'POST',
-          headers,
+          headers: getAuthHeaders(),
           body: JSON.stringify(record)
         }
       );
@@ -350,8 +385,9 @@ export async function DELETE(request: Request) {
   try {
     // Extract query parameters
     const url = new URL(request.url);
-    const zoneId = url.searchParams.get('zone_id');
-    const recordId = url.searchParams.get('record_id');
+    const pathParts = url.pathname.split('/');
+    const recordId = pathParts[pathParts.length - 1]; // Get the record ID from the URL path
+    const zoneId = url.searchParams.get('zoneId') || url.searchParams.get('zone_id');
     
     if (!zoneId || !recordId) {
       return NextResponse.json(
@@ -366,14 +402,14 @@ export async function DELETE(request: Request) {
     }
     
     console.log(`[Cloudflare API] Deleting DNS record ${recordId} from zone ${zoneId}`);
-    console.log(`[Cloudflare API] Using Global API Key authentication with email: ${CLOUDFLARE_EMAIL}`);
+    console.log(`[Cloudflare API] Using API Token authentication`);
     
     try {
       const response = await fetch(
         `${CLOUDFLARE_API_URL}/zones/${zoneId}/dns_records/${recordId}`,
         { 
           method: 'DELETE',
-          headers
+          headers: getAuthHeaders()
         }
       );
       

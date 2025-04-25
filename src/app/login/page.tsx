@@ -2,18 +2,22 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
+import Image from "next/image";
+import { Card, CardContent, CardFooter, CardHeader } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { toast } from "sonner";
+import { useAuth } from "../../components/auth/auth-provider";
+// Link component is no longer needed
 
 export default function LoginPage() {
   const router = useRouter();
+  const { signIn } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
-    email: "dns@superwave.ai",
-    password: "password123",  // Set a default password for easier testing
+    email: "", // Initialize with empty string
+    password: "", // Initialize with empty string
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -36,17 +40,12 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
-      // In a real application, we would make an API call to authenticate
-      localStorage.setItem('isAuthenticated', 'true'); // Store authentication state
-      
+      await signIn(formData.email, formData.password);
       toast.success("Logged in successfully");
-      router.push("/dashboard");
+      router.push("/domains");
     } catch (error) {
       console.error("Login error:", error);
-      toast.error("Login failed. Please check your credentials.");
+      toast.error(error instanceof Error ? error.message : "Login failed. Please check your credentials.");
     } finally {
       setIsLoading(false);
     }
@@ -55,14 +54,21 @@ export default function LoginPage() {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">DNS-FD Login</CardTitle>
-          <CardDescription className="text-center">
-            Enter your credentials to access your account
-          </CardDescription>
+        <CardHeader className="space-y-4 pt-8 pb-6"> {/* Added padding */}
+          {/* Replace CardTitle with Image */}
+          <div className="flex justify-center">
+            <Image
+              src="/superwave-logo-black.png" // Path relative to public directory
+              alt="Superwave Logo"
+              width={180} // Adjust width as needed
+              height={40} // Adjust height based on aspect ratio
+              priority // Prioritize loading the logo
+            />
+          </div>
+          {/* Removed CardDescription */}
         </CardHeader>
         <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6 pt-4"> {/* Adjusted padding */}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -77,8 +83,9 @@ export default function LoginPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
-                <Button variant="link" className="px-0" onClick={() => router.push("/forgot-password")}>
-                  Forgot password?
+                {/* Make the button non-focusable and type="button" to prevent accidental form submission */}
+                <Button type="button" variant="link" className="px-0 text-sm" tabIndex={-1}>
+                  {/* Forgot password? - Removed functionality for now */}
                 </Button>
               </div>
               <Input
@@ -92,10 +99,12 @@ export default function LoginPage() {
               />
             </div>
           </CardContent>
-          <CardFooter>
-            <Button type="submit" className="w-full" disabled={isLoading}>
+          <CardFooter className="flex flex-col pt-6 pb-8"> {/* Added padding */}
+            {/* Increased top margin for the button */}
+            <Button type="submit" className="w-full mt-4" disabled={isLoading}>
               {isLoading ? "Logging in..." : "Login"}
             </Button>
+            {/* Removed the Sign up link section */}
           </CardFooter>
         </form>
       </Card>

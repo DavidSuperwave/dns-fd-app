@@ -1,258 +1,222 @@
-/**
- * Cloudflare API Service
- * 
- * This service handles all interactions with the Cloudflare API
- * via our Next.js API routes to avoid CORS issues.
- */
+// Cloudflare API client functions
+// toast import removed as it's not used in this file
 
-/**
- * Enhanced error handling for API responses
- * Extracts useful error information from responses
- */
-async function handleErrorResponse(response: Response): Promise<never> {
-  let errorMessage = '';
-  try {
-    const errorData = await response.json();
-    errorMessage = errorData.error || `API error: ${response.status} ${response.statusText}`;
-    
-    // Log detailed error information to console for debugging
-    console.error('Cloudflare API error details:', {
-      status: response.status,
-      statusText: response.statusText,
-      error: errorData
-    });
-  } catch (e) {
-    errorMessage = `API error: ${response.status} ${response.statusText}`;
-  }
-  throw new Error(errorMessage);
+// Use a consistent API URL base
+const API_BASE = '/api/cloudflare';
+
+export interface CloudflareDomain {
+  id: string;
+  name: string;
+  status: string;
+  paused: boolean;
+  type: string;
+  created_on: string;
+  modified_on: string;
+  redirect_url?: string | null;
+  dns_records?: CloudflareDnsRecord[];
+}
+
+export interface CloudflareDnsRecord {
+  id: string;
+  name: string;
+  type: string;
+  content: string;
+  ttl: number;
+  proxied: boolean;
+  locked?: boolean;
+  created_on?: string;
+  modified_on?: string;
+}
+
+export interface ResultInfo {
+  page: number;
+  per_page: number;
+  total_pages: number;
+  count: number;
+  total_count: number;
+}
+
+// Create domain result interface that matches what the component expects
+export interface CreateDomainResult {
+  success: boolean;
+  domain?: CloudflareDomain;
+  nameservers?: string[];
+  originalNameservers?: string[];
+  warning?: string;
+  error?: string;
 }
 
 /**
- * Fetch all domains (zones) from Cloudflare
- * @param page Page number for pagination
- * @param perPage Number of items per page
- * @returns Promise with the list of domains
+ * Fetch domains from the Cloudflare API
  */
 export async function fetchDomains(page: number = 1, perPage: number = 50) {
-  try {
-    console.log(`Fetching domains: page=${page}, perPage=${perPage}`);
-    const response = await fetch(
-      `/api/cloudflare/domains?page=${page}&per_page=${perPage}`
-    );
-    
-    if (!response.ok) {
-      return handleErrorResponse(response);
-    }
-    
-    const data = await response.json();
-    
-    // Additional client-side validation
-    if (!data.success) {
-      console.error('API reported failure but returned 200 status:', data);
-      throw new Error(data.error || 'Unknown API error');
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Failed to fetch domains:', error);
-    throw error;
+  // Use the new zone-management endpoint 
+  const response = await fetch(`${API_BASE}/zone-management?page=${page}&per_page=${perPage}`, {
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await response.json();
+
+  if (!data.success) {
+    console.error('Error fetching domains:', data.error);
+    return { success: false, error: data.error || 'Failed to fetch domains' };
   }
+
+  return data;
 }
 
 /**
- * Create a new domain (zone) in Cloudflare
- * @param domainName The domain name to create
- * @param accountId Optional account ID (uses default if not provided)
- * @returns Promise with the created domain and nameservers
+ * Create a new domain in Cloudflare
  */
-export async function createDomain(domainName: string, accountId?: string) {
+export async function createDomain(domainName: string, redirect?: string): Promise<CreateDomainResult> {
   try {
-    console.log(`Creating domain: ${domainName}`);
-    
-    // Validate domain name format client-side before sending request
-    const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/i;
-    if (!domainRegex.test(domainName)) {
-      throw new Error('Please enter a valid domain name (e.g., example.com)');
-    }
-    
-    const response = await fetch('/api/cloudflare/domains', {
+    // Use the new zone-management endpoint
+    const response = await fetch(`${API_BASE}/zone-management`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         name: domainName,
-        account: accountId ? { id: accountId } : undefined
-      })
+        redirect_url: redirect || null
+      }),
     });
-    
-    if (!response.ok) {
-      return handleErrorResponse(response);
-    }
-    
+
     const data = await response.json();
-    
-    // Additional client-side validation
+
     if (!data.success) {
-      console.error('API reported failure but returned 200 status:', data);
-      throw new Error(data.error || 'Unknown API error');
+      return {
+        success: false,
+        error: data.error || 'Failed to create domain'
+      };
     }
-    
-    // Check if nameservers were returned
-    if (!data.nameservers || data.nameservers.length === 0) {
-      console.warn('Domain created but no nameservers were returned:', data);
+
+    // Check API response for mock data indicators
+    let warning = undefined;
+    if (data.isMockData) {
+      warning = "Using sample data for demonstration purposes. This is not a real domain registration.";
+    } else if (data.status === "pending") {
+      warning = "Domain added but registration is pending. Please check back later.";
     }
-    
-    // Handle any warning messages for the UI
-    if (data.warning) {
-      console.warn('Domain created with warning:', data.warning);
+
+    return {
+      success: true,
+      domain: data.domain,
+      nameservers: data.nameservers || [],
+      originalNameservers: data.originalNameservers || [],
+      warning
+    };
+  } catch (error) {
+    console.error('Error creating domain:', error);
+    return { 
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error creating domain'
+    };
+  }
+}
+
+/**
+ * Fetch DNS records for a domain from the Cloudflare API
+ */
+export async function fetchDnsRecords(domainId: string, page: number = 1, perPage: number = 100) {
+  try {
+    const response = await fetch(`${API_BASE}/dns-records?zoneId=${domainId}&page=${page}&per_page=${perPage}`);
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch DNS records');
     }
-    
+
     return data;
   } catch (error) {
-    console.error('Failed to create domain:', error);
+    console.error('Error fetching DNS records:', error);
     throw error;
   }
 }
 
 /**
- * Fetch DNS records for a specific domain
- * @param zoneId The Cloudflare Zone ID for the domain
- * @param page Page number for pagination
- * @param perPage Number of items per page
- * @returns Promise with the list of DNS records
+ * Create a new DNS record for a domain
  */
-export async function fetchDnsRecords(zoneId: string, page: number = 1, perPage: number = 100) {
+export async function createDnsRecord(domainId: string, record: Partial<CloudflareDnsRecord>) {
   try {
-    console.log(`Fetching DNS records for zone ${zoneId}: page=${page}, perPage=${perPage}`);
-    
-    if (!zoneId) {
-      throw new Error('Zone ID is required');
-    }
-    
-    const response = await fetch(
-      `/api/cloudflare/dns-records?zone_id=${zoneId}&page=${page}&per_page=${perPage}`
-    );
-    
-    if (!response.ok) {
-      return handleErrorResponse(response);
-    }
-    
+    const response = await fetch(`${API_BASE}/dns-records`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        zoneId: domainId,
+        ...record,
+      }),
+    });
+
     const data = await response.json();
-    
-    // Additional client-side validation
+
     if (!data.success) {
-      console.error('API reported failure but returned 200 status:', data);
-      throw new Error(data.error || 'Unknown API error');
+      throw new Error(data.error || 'Failed to create DNS record');
     }
-    
-    // Handle any warning messages for the UI
-    if (data.warning) {
-      console.warn('DNS records fetched with warning:', data.warning);
-    }
-    
+
     return data;
   } catch (error) {
-    console.error('Failed to fetch DNS records:', error);
+    console.error('Error creating DNS record:', error);
     throw error;
   }
 }
 
 /**
- * Create a new DNS record
- * @param zoneId The Cloudflare Zone ID for the domain
- * @param record The DNS record to create
- * @returns Promise with the created DNS record
+ * Update an existing DNS record
  */
-export async function createDnsRecord(zoneId: string, record: any) {
+export async function updateDnsRecord(
+  domainId: string,
+  recordId: string,
+  record: Partial<CloudflareDnsRecord>
+) {
   try {
-    console.log(`Creating DNS record for zone ${zoneId}:`, record);
-    
-    if (!zoneId) {
-      throw new Error('Zone ID is required');
-    }
-    
-    // Validate required record fields
-    if (!record.type || !record.name || !record.content) {
-      throw new Error('DNS record must include type, name, and content');
-    }
-    
-    const response = await fetch(
-      `/api/cloudflare/dns-records?zone_id=${zoneId}`, 
-      { 
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(record)
-      }
-    );
-    
-    if (!response.ok) {
-      return handleErrorResponse(response);
-    }
-    
+    const response = await fetch(`${API_BASE}/dns-records/${recordId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        zoneId: domainId,
+        ...record,
+      }),
+    });
+
     const data = await response.json();
-    
-    // Additional client-side validation
+
     if (!data.success) {
-      console.error('API reported failure but returned a 200 status:', data);
-      throw new Error(data.error || 'Unknown API error');
+      throw new Error(data.error || 'Failed to update DNS record');
     }
-    
-    // Handle any warning messages for the UI
-    if (data.warning) {
-      console.warn('DNS record created with warning:', data.warning);
-    }
-    
-    return data.record;
+
+    return data;
   } catch (error) {
-    console.error('Failed to create DNS record:', error);
+    console.error('Error updating DNS record:', error);
     throw error;
   }
 }
 
 /**
  * Delete a DNS record
- * @param zoneId The Cloudflare Zone ID for the domain
- * @param recordId The ID of the DNS record to delete
- * @returns Promise with the deletion result
  */
-export async function deleteDnsRecord(zoneId: string, recordId: string) {
+export async function deleteDnsRecord(domainId: string, recordId: string) {
   try {
-    console.log(`Deleting DNS record ${recordId} from zone ${zoneId}`);
-    
-    if (!zoneId || !recordId) {
-      throw new Error('Zone ID and Record ID are required');
-    }
-    
-    const response = await fetch(
-      `/api/cloudflare/dns-records?zone_id=${zoneId}&record_id=${recordId}`, 
-      { 
-        method: 'DELETE'
-      }
-    );
-    
-    if (!response.ok) {
-      return handleErrorResponse(response);
-    }
-    
+    const response = await fetch(`${API_BASE}/dns-records/${recordId}?zoneId=${domainId}`, {
+      method: 'DELETE',
+    });
+
     const data = await response.json();
-    
-    // Additional client-side validation
+
     if (!data.success) {
-      console.error('API reported failure but returned a 200 status:', data);
-      throw new Error(data.error || 'Unknown API error');
+      throw new Error(data.error || 'Failed to delete DNS record');
     }
-    
-    // Handle any warning messages for the UI
-    if (data.warning) {
-      console.warn('DNS record deleted with warning:', data.warning);
-    }
-    
-    return data.result;
+
+    return data;
   } catch (error) {
-    console.error('Failed to delete DNS record:', error);
+    console.error('Error deleting DNS record:', error);
     throw error;
   }
 }

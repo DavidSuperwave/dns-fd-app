@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
 import {
@@ -31,7 +31,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { toast } from "sonner";
 import DashboardLayout from "../../components/layout/dashboard-layout";
-import { fetchDnsRecords, createDnsRecord, deleteDnsRecord } from "../../lib/cloudflare-api";
+import { createDnsRecord, deleteDnsRecord } from "../../lib/cloudflare-api";
 
 // Cloudflare DNS record interface
 interface CloudflareDnsRecord {
@@ -172,15 +172,8 @@ export default function DNSRecordsPage() {
     }
   }, []);
 
-  // Fetch DNS records from Cloudflare API when selectedDomain changes
-  useEffect(() => {
-    if (selectedDomain) {
-      loadDnsRecords(selectedDomain.id, currentPage);
-    }
-  }, [selectedDomain, currentPage]);
-
   // Fetch DNS records from Cloudflare API or use mock data
-  const loadDnsRecords = async (zoneId: string, page: number = 1, useMockData: boolean = false) => {
+  const loadDnsRecords = useCallback(async (zoneId: string, page: number = 1, useMockData: boolean = false) => {
     setIsLoading(true);
     setIsError(false);
     
@@ -188,7 +181,7 @@ export default function DNSRecordsPage() {
       if (useMockData) {
         // Use mock data
         // Update mock records to use the selected domain name if available
-        const customizedMockRecords = selectedDomain 
+        const customizedMockRecords = selectedDomain
           ? mockDnsRecords.map(record => ({
               ...record,
               zone_id: selectedDomain.id,
@@ -203,29 +196,42 @@ export default function DNSRecordsPage() {
         setUsingMockData(true);
         toast.info("Using sample data for demonstration");
       } else {
-        // Fetch from API
-        const result = await fetchDnsRecords(zoneId, page, 50);
+        // Get DNS records from Cloudflare API
+        const response = await fetch(`/api/cloudflare/dns-records?zone_id=${zoneId}&page=${page}`);
         
-        if (result.success) {
-          setDnsRecords(result.dnsRecords);
-          setResultInfo(result.resultInfo);
-          setTotalPages(result.resultInfo.total_pages);
-          setUsingMockData(false);
-        } else {
-          throw new Error("API request was not successful");
+        if (!response.ok) {
+          throw new Error("Failed to fetch DNS records from Cloudflare API");
         }
+
+        const data = await response.json();
+        
+        if (!data.success) {
+          throw new Error(data.error || "Failed to fetch DNS records");
+        }
+
+        setDnsRecords(data.dnsRecords);
+        setResultInfo(data.resultInfo);
+        setTotalPages(data.resultInfo.total_pages);
+        setUsingMockData(false);
       }
     } catch (error) {
       console.error("Error loading DNS records:", error);
       setIsError(true);
       
       if (!useMockData) {
-        toast.error("Error connecting to Cloudflare API. Try using sample data.");
+        toast.error("Error loading DNS records. Try using sample data.");
       }
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedDomain, setDnsRecords, setResultInfo, setTotalPages, setUsingMockData, setIsLoading, setIsError]);
+
+  // Fetch DNS records from Cloudflare API when selectedDomain changes
+  useEffect(() => {
+    if (selectedDomain) {
+      loadDnsRecords(selectedDomain.id, currentPage);
+    }
+  }, [selectedDomain, currentPage, loadDnsRecords]);
 
   // Handle page change
   const handlePageChange = (newPage: number) => {

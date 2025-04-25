@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "crons": [
+    {
+      "path": "/api/cron/sync",
+      "schedule": "0 * * * *"
+    }
+  ],
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": "https://zfwaqmkqqykfptczwqwo.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpmd2FxbWtxcXlrZnB0Y3p3cXdvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU0MTI0NDYsImV4cCI6MjA2MDk4ODQ0Nn0.cXzZsBxBe1j-lHQUccGLVbHdWxqS-TJ447DJlf7NL2E"
+  },
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "regions": ["iad1"], 
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Credentials", "value": "true" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
+        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization" }
+      ]
+    }
+  ]
+}

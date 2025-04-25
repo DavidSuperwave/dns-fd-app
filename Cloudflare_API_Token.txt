@@ -1,0 +1,3 @@
+Email: dns@superwave.ai
+API Token: 3zYP5-L3oxluS5N3VNJNH7UXxh9NbxbyU0psh8uG
+Account ID: 4dc0ca4b102ca90ce263dbec31af4a1f
