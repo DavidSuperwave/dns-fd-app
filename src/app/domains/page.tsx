@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { CSVUpload } from "@/components/domains/csv-upload";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
 import { PlusCircle, ExternalLink, Loader2, AlertTriangle } from "lucide-react";
@@ -1369,7 +1370,7 @@ export default function DomainsPage() {
                     <TableHead className="w-[20%]">Domain Name</TableHead>
                     <TableHead className="w-[15%]">Redirect</TableHead>
                     <TableHead className="w-[10%]">Created On</TableHead>
-                    <TableHead className="w-[10%]">Modified On</TableHead>
+                    <TableHead className="w-[15%]">Storage</TableHead>
                     <TableHead className="w-[10%]">Last Synced</TableHead>
                     <TableHead className="w-[10%]">Status</TableHead>
                     <TableHead className="w-[10%]">Assigned User</TableHead>
@@ -1443,7 +1444,14 @@ export default function DomainsPage() {
                           )}
                         </TableCell>
                         <TableCell>{formatDate(domain.created_on)}</TableCell>
-                        <TableCell>{domain.modified_on ? formatDate(domain.modified_on) : 'N/A'}</TableCell>
+                        <TableCell>
+                          <CSVUpload
+                            domainId={domain.id}
+                            domainName={domain.name}
+                            hasFiles={domain.has_files || false}
+                            userId={domain.user_id}
+                          />
+                        </TableCell>
                         <TableCell>
                           {isSyncing ? (
                             <span className="text-gray-500 text-sm flex items-center gap-1">
