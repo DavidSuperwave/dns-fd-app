@@ -71,7 +71,17 @@ function SignupForm() {
         }
 
         setIsInvitationValid(true);
-        setInvitationData(invitations);
+        // Construct a new object with the correct type
+        if (invitations) {
+          const newInvitationData: InvitationData = {
+            email: invitations.email as string, // Assert type
+            role: invitations.role as string, // Assert type
+            token: invitations.token as string, // Assert type
+            created_at: invitations.created_at as string, // Assert type
+            created_by: invitations.created_by as string, // Assert type
+          };
+          setInvitationData(newInvitationData);
+        }
       } catch (error) {
         console.error('Error verifying invitation:', error);
         toast.error('Error verifying invitation');

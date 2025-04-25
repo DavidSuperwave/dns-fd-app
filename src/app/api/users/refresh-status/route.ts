@@ -6,7 +6,8 @@ import { supabaseAdmin } from '@/lib/supabase-client'; // Import the admin clien
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
-  const cookieStore = cookies(); // Get the cookie store instance
+  // Await the cookies() promise first
+  const resolvedCookieStore = await cookies();
 
   // Create Supabase client using createServerClient (from @supabase/ssr)
   // Provide the cookie methods object
@@ -15,8 +16,8 @@ export async function POST(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
+        get(name: string) { // Now synchronous, using the resolved store
+          return resolvedCookieStore.get(name)?.value;
         },
         set(name: string, _value: string, _options: CookieOptions) { // Keep unused params prefixed
           // The `set` method is called by the Supabase client potentially.

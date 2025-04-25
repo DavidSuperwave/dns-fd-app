@@ -56,6 +56,8 @@ interface CloudflareDomain {
   last_synced?: string | null;
   redirect_url?: string | null;
   created_by?: string;
+  has_files?: boolean; // Add this property
+  user_id?: string | null; // Add this property
 }
 
 // Result info interface from Cloudflare
