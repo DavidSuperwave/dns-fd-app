@@ -185,7 +185,7 @@ export default function DomainsPage() {
 
 
   // Load domains from latest scan
-  const loadDomains = useCallback(async (useMockData: boolean = false) => {
+  const loadDomains = useCallback(async ({ useMockData = false, signal }: { useMockData?: boolean; signal?: AbortSignal }) => {
     setIsLoading(true);
     setIsError(false);
     
@@ -214,6 +214,7 @@ export default function DomainsPage() {
             .eq('status', 'completed')
             .order('created_at', { ascending: false })
             .limit(1)
+            .abortSignal(signal)
             .single();
 
           // Parse and format the timestamp to ISO string
@@ -230,7 +231,8 @@ export default function DomainsPage() {
             const { data: assignments, error: assignmentError } = await supabase
               .from('domain_assignments')
               .select('domain_id')
-              .eq('user_email', user.email);
+              .eq('user_email', user.email)
+              .abortSignal(signal);
 
             if (assignmentError) {
                 console.error('Error fetching domain assignments:', assignmentError);
@@ -280,7 +282,7 @@ export default function DomainsPage() {
           });
 
           // First get count of matching records
-          const { count, error: countError } = await queryBase;
+          const { count, error: countError } = await queryBase.abortSignal(signal);
           
           if (countError) {
             console.error('Count query error:', countError);
@@ -302,7 +304,8 @@ export default function DomainsPage() {
             console.log(`Fetching page ${page + 1}/${totalPages} (rows ${from}-${to})`);
             
             const { data: pageData, error: pageError } = await queryBase
-              .range(from, to);
+              .range(from, to)
+              .abortSignal(signal);
               
             if (pageError) {
               console.error(`Error fetching page ${page + 1}:`, pageError);
@@ -416,21 +419,35 @@ export default function DomainsPage() {
 
   // Load domains only when auth state (isAdmin and user.email for non-admins) is confirmed, or page changes
   useEffect(() => {
-    // Determine if auth state is ready for loading
-    const isAuthReady = isAdmin !== undefined && (isAdmin || (!isAdmin && user?.email));
-
-    if (isAuthReady) {
-      console.log('[Effect] Auth state confirmed, calling loadDomains.', { user: user?.email, isAdmin });
-      loadDomains(); // Call loadDomains now that auth is ready
-    } else {
-      console.log('[Effect] Auth state not fully ready, deferring loadDomains call.', { isAdmin, userEmail: user?.email });
-      // Optionally set loading state here if needed, though loadDomains already does
-    }
-    // We depend on currentPage to reload when pagination changes.
-    // We depend on loadDomains because it's defined outside and uses state.
-    // We depend on isAdmin and user?.email to re-trigger when auth state stabilizes.
-  }, [isAdmin, user?.email, currentPage, loadDomains]); // Refined dependencies
-
+    const controller = new AbortController();
+  
+    const load = async () => {
+      const isAuthReady = isAdmin !== undefined && (isAdmin || (!isAdmin && user?.email));
+      if (!isAuthReady) {
+        console.log('[Effect] Auth state not fully ready, deferring loadDomains call.', { isAdmin, userEmail: user?.email });
+        return;
+      }
+  
+      try {
+        await loadDomains({ useMockData: false, signal: controller.signal });
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          console.log('Load aborted');
+        } else {
+          console.error('Error loading domains:', error);
+          setIsError(true);
+          toast.error("Error loading domains");
+        }
+      }
+    };
+  
+    load();
+  
+    return () => controller.abort();
+  }, [isAdmin, user?.email]); // Remove currentPage if not needed for initial load
+  
+  
+  
   // Mock users for assignment - in a real app this would come from an API
   const mockUsers = [
     { id: "1", name: "Admin User", email: "admin@example.com" },
@@ -478,12 +495,13 @@ export default function DomainsPage() {
 
   // Load assigned users and setup realtime subscriptions
   useEffect(() => {
+    const controller = new AbortController();
     // Initial load
     loadAssignedUsers();
 
     // Create a single channel for all subscriptions
     const channel = supabase.channel('realtime_changes');
-
+    
     // Subscribe to domain assignments changes
     channel
       .on(
@@ -498,12 +516,9 @@ export default function DomainsPage() {
         old: DomainAssignment | null;
         eventType: string;
       }) => {
-        // Only reload if the change affects the current user
         const assignment = payload.new;
-        console.log('[Realtime] Assignment change detected', payload); // Keep a simpler log
         if (isAdmin || (user?.email && assignment?.user_email === user.email)) {
         await loadAssignedUsers();
-        await loadDomains(); // Consider if loadDomains needs to be called here or just state update
         }
       }
       )
@@ -532,16 +547,17 @@ export default function DomainsPage() {
           (assignedUsers && domain?.id && assignedUsers[domain.id] === user.email)))
         ) {
         console.log('[Realtime] Domain change detected', payload); // Keep a simpler log
-        await loadDomains(); // Consider if loadDomains needs to be called here or just state update
+        await loadDomains({ useMockData: false, signal: controller.signal }); // Consider if loadDomains needs to be called here or just state update
         }
       }
       )
       .subscribe();
 
     return () => {
+      controller.abort();
       channel.unsubscribe();
     };
-  }, [isAdmin, user?.email, loadAssignedUsers, loadDomains, assignedUsers]); // Keep loadDomains here for now, but be aware of potential loops
+  }, [isAdmin, user?.email]); // Remove loadAssignedUsers from dependencies
 
   // Handle dialog state
   const handleOpenChange = (open: boolean) => {
@@ -1067,7 +1083,7 @@ export default function DomainsPage() {
               
               // Force refresh the domain list to update with assignments
               setTimeout(() => {
-                loadDomains(); // Call without arguments
+                loadDomains({ useMockData: false}) // Call without arguments
               }, 1000);
             }
           } catch (assignError) {
@@ -1088,7 +1104,7 @@ export default function DomainsPage() {
           toast.success('Domain added successfully');
           
           // Reload domains to ensure proper filtering
-          loadDomains(false);
+          loadDomains({ useMockData: false });
         }
 
         // Show nameservers
@@ -1296,7 +1312,7 @@ export default function DomainsPage() {
           <div className="bg-yellow-50 p-4 mb-6 rounded-md border border-yellow-200">
             <p className="text-yellow-800">
               Currently showing sample data. 
-              <Button variant="link" className="p-0 h-auto ml-2" onClick={() => loadDomains(false)}>
+              <Button variant="link" className="p-0 h-auto ml-2" onClick={() => loadDomains({ useMockData: false })}>
                 Try loading real data
               </Button>
             </p>
@@ -1354,7 +1370,7 @@ export default function DomainsPage() {
               <div className="flex gap-2 justify-center">
                 <Button
                   variant="outline"
-                  onClick={() => loadDomains(false)}
+                  onClick={() => loadDomains({ useMockData: false})}
                 >
                   Try Again
                 </Button>
@@ -1634,7 +1650,7 @@ export default function DomainsPage() {
                           setIsAssignDialogOpen(false);
                           
                           // Reload domains and assignments to reflect changes
-                          await loadDomains(false);
+                          await loadDomains({ useMockData: false});
                           await loadAssignedUsers();
                         } catch (error) {
                           console.error('Error assigning domain:', error);
@@ -1705,7 +1721,7 @@ export default function DomainsPage() {
                       });
 
                       // Reload domains to reflect changes
-                      await loadDomains(false);
+                      await loadDomains({ useMockData: false });
                     } catch (error) {
                       console.error('Error unassigning domain:', error);
                       toast.error('Failed to unassign domain');
