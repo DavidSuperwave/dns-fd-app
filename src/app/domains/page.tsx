@@ -222,15 +222,21 @@ export default function DomainsPage() {
           // Build query base without limit/range - we'll use manual pagination
           let queryBase = supabase.from('domains').select('*', { count: 'exact' });
 
-          // For non-admin users, filter by assigned domains
-          if (!isAdmin && user?.email) {
-            const { data: assignments } = await supabase
+          // For non-admin users, filter by assigned domains *only if email is available*
+          if (!isAdmin && user?.email) { // Ensure user.email is truthy before proceeding
+            console.log(`[loadDomains] Applying user filter for: ${user.email}`);
+            const { data: assignments, error: assignmentError } = await supabase
               .from('domain_assignments')
               .select('domain_id')
               .eq('user_email', user.email);
 
-            if (!assignments?.length) {
-              console.log('No domains assigned to user');
+            if (assignmentError) {
+                console.error('Error fetching domain assignments:', assignmentError);
+                // Decide how to handle: maybe show error, or proceed without filter?
+                // For now, let's proceed without filter but log the error.
+                toast.error(`Error fetching your domain assignments: ${assignmentError.message}`);
+            } else if (!assignments || assignments.length === 0) {
+              console.log(`No domains assigned to user ${user.email}`);
               setAllDomains([]);
               setDomains([]);
               setFilteredDomains([]);
@@ -239,8 +245,13 @@ export default function DomainsPage() {
               return;
             }
 
-            const assignedDomainIds = assignments.map(a => a.domain_id);
+            const assignedDomainIds = assignments.map((a: { domain_id: string }) => a.domain_id); // Add type hint
+            console.log(`[loadDomains] Found ${assignedDomainIds.length} assigned domain IDs for ${user.email}`);
             queryBase = queryBase.in('id', assignedDomainIds);
+          } else if (!isAdmin && user) {
+              // User object exists but email might be missing temporarily, or user has no email?
+              // Avoid filtering, but log this state.
+              console.warn(`[loadDomains] Non-admin user detected, but user.email is not available. Skipping domain filtering. User object:`, user);
           }
 
           // Apply search filter
@@ -399,14 +410,24 @@ export default function DomainsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [isAdmin, user?.email, searchQuery, statusFilter, lastSyncTime, applyFilters, currentPage]); // Removed unnecessary dependencies: supabase, mockDomains. Added missing: applyFilters, currentPage
+  }, [isAdmin, user?.email, searchQuery, statusFilter, currentPage]); // Simplified dependencies
 
-  // Load domains when page, search, or status filter changes
+  // Load domains only when auth state (isAdmin and user.email for non-admins) is confirmed, or page changes
   useEffect(() => {
-    if (isAdmin !== undefined && user?.email) {
-      loadDomains();
+    // Determine if auth state is ready for loading
+    const isAuthReady = isAdmin !== undefined && (isAdmin || (!isAdmin && user?.email));
+
+    if (isAuthReady) {
+      console.log('[Effect] Auth state confirmed, calling loadDomains.', { user: user?.email, isAdmin });
+      loadDomains(); // Call loadDomains now that auth is ready
+    } else {
+      console.log('[Effect] Auth state not fully ready, deferring loadDomains call.', { isAdmin, userEmail: user?.email });
+      // Optionally set loading state here if needed, though loadDomains already does
     }
-  }, [isAdmin, user?.email, currentPage, loadDomains]);
+    // We depend on currentPage to reload when pagination changes.
+    // We depend on loadDomains because it's defined outside and uses state.
+    // We depend on isAdmin and user?.email to re-trigger when auth state stabilizes.
+  }, [isAdmin, user?.email, currentPage, loadDomains]); // Refined dependencies
 
   // Mock users for assignment - in a real app this would come from an API
   const mockUsers = [
@@ -472,9 +493,10 @@ export default function DomainsPage() {
         async (payload) => {
           // Only reload if the change affects the current user
           const assignment = payload.new as DomainAssignment;
+          console.log('[Realtime] Assignment change detected', payload); // Keep a simpler log
           if (isAdmin || (user?.email && assignment?.user_email === user.email)) {
             await loadAssignedUsers();
-            await loadDomains();
+            await loadDomains(); // Consider if loadDomains needs to be called here or just state update
           }
         }
       )
@@ -497,7 +519,8 @@ export default function DomainsPage() {
                 (assignedUsers && domain?.id && assignedUsers[domain.id] === user.email)
               ))
           ) {
-            await loadDomains();
+           console.log('[Realtime] Domain change detected', payload); // Keep a simpler log
+           await loadDomains(); // Consider if loadDomains needs to be called here or just state update
           }
         }
       )
@@ -506,7 +529,7 @@ export default function DomainsPage() {
     return () => {
       channel.unsubscribe();
     };
-  }, [isAdmin, user?.email, loadAssignedUsers, loadDomains, assignedUsers]);
+  }, [isAdmin, user?.email, loadAssignedUsers, loadDomains, assignedUsers]); // Keep loadDomains here for now, but be aware of potential loops
 
   // Handle dialog state
   const handleOpenChange = (open: boolean) => {
