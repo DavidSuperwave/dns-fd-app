@@ -5,6 +5,7 @@ import { performBackgroundScan } from '../lib/background-scan';
 import { useLatestScan } from './useLatestScan';
 import { supabase } from '../lib/supabase-client';
 import { ProgressTracker, ScanResult } from '../types/scan';
+import { RealtimePostgresInsertPayload } from "@supabase/supabase-js";
 
 const DEBUG_PREFIX = '[BackgroundScan Hook]';
 
@@ -66,7 +67,7 @@ export function useBackgroundScan() {
         event: '*',
         schema: 'public',
         table: 'scan_results'
-      }, (payload) => {
+      }, (payload: RealtimePostgresInsertPayload<ScanResult>) => {
         console.log(`${DEBUG_PREFIX} Received Supabase update:`, payload);
         
         if (!isMounted.current) {

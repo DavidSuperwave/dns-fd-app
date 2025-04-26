@@ -158,7 +158,7 @@ export function AddDomainDialog({
           toast.success(`Domain ${domainName} added successfully`);
         }
         
-        if (onDomainAdded) {
+        if (onDomainAdded && result.domain) {
           onDomainAdded(result.domain);
         }
       } else {

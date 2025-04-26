@@ -138,7 +138,7 @@ export async function performBackgroundScan(perPage: number = 50): Promise<ScanR
 
     // Process domains from first page
     console.log(`${DEBUG_PREFIX} Processing domains from first page`);
-    const domains = firstResult.domains || [];
+    const domains: CloudflareDomain[] = firstResult.domains || [];
     const domainIds = domains.map(domain => domain.id);
     
     console.log(`${DEBUG_PREFIX} Fetching DNS records for ${domainIds.length} domains`);
@@ -199,7 +199,7 @@ export async function performBackgroundScan(perPage: number = 50): Promise<ScanR
             totalDomains += result.domains.length;
             
             // Process domains and fetch DNS records
-            const domains = result.domains;
+            const domains: CloudflareDomain[] = result.domains || [];
             const domainIds = domains.map(domain => domain.id);
             
             console.log(`${DEBUG_PREFIX} Fetching DNS records for ${domainIds.length} domains`);

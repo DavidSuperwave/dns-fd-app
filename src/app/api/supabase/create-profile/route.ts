@@ -109,7 +109,6 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('[API] Error creating user profile:', error);
     const errorDetails = error instanceof Error ? {
-      message: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
       ...error
     } : error;

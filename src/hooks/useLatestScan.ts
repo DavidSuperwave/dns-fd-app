@@ -176,7 +176,7 @@ export function useLatestScan() {
             schema: 'public',
             table: 'scan_results',
             filter: 'status=in.(running,completed)'
-          }, (payload) => {
+          }, (payload: { new: ScanResult }) => {
             if (payload.new && !document.hidden) { // Only process updates when tab is visible
               processScanData((payload.new as unknown) as ScanResult);
             }

@@ -51,10 +51,10 @@ const mockRedirects: Record<string, string | null> = {
 
 export async function GET(
   request: NextRequest, // Use NextRequest
-  context // Remove type annotation
+  { params }: { params: Promise<{ id: string }> } // Remove type annotation
 ) {
   try {
-    const zoneId = context.params.id; // Access id via context.params
+    const zoneId = (await params).id; // Access id via context.params
     
     console.log(`[Cloudflare Redirects API] Fetching redirect info for zone: ${zoneId}`);
     

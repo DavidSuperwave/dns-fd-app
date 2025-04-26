@@ -486,45 +486,55 @@ export default function DomainsPage() {
 
     // Subscribe to domain assignments changes
     channel
-      .on('postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'domain_assignments'
-        },
-        async (payload) => {
-          // Only reload if the change affects the current user
-          const assignment = payload.new as DomainAssignment;
-          console.log('[Realtime] Assignment change detected', payload); // Keep a simpler log
-          if (isAdmin || (user?.email && assignment?.user_email === user.email)) {
-            await loadAssignedUsers();
-            await loadDomains(); // Consider if loadDomains needs to be called here or just state update
-          }
+      .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'domain_assignments',
+      },
+      async (payload: {
+        new: DomainAssignment;
+        old: DomainAssignment | null;
+        eventType: string;
+      }) => {
+        // Only reload if the change affects the current user
+        const assignment = payload.new;
+        console.log('[Realtime] Assignment change detected', payload); // Keep a simpler log
+        if (isAdmin || (user?.email && assignment?.user_email === user.email)) {
+        await loadAssignedUsers();
+        await loadDomains(); // Consider if loadDomains needs to be called here or just state update
         }
+      }
       )
       // Subscribe to domains changes
-      .on('postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'domains'
-        },
-        async (payload) => {
-          const domain = payload.new as CloudflareDomain;
-          // Only reload if:
-          // 1. User is admin
-          // 2. Domain was created by user
-          // 3. Domain is assigned to user
-          if (isAdmin ||
-              (user?.email && (
-                domain?.created_by === user.email ||
-                (assignedUsers && domain?.id && assignedUsers[domain.id] === user.email)
-              ))
-          ) {
-           console.log('[Realtime] Domain change detected', payload); // Keep a simpler log
-           await loadDomains(); // Consider if loadDomains needs to be called here or just state update
-          }
+      .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'domains',
+      },
+      async (payload: {
+        new: CloudflareDomain;
+        old: CloudflareDomain | null;
+        eventType: string;
+      }) => {
+        const domain = payload.new;
+        // Only reload if:
+        // 1. User is admin
+        // 2. Domain was created by user
+        // 3. Domain is assigned to user
+        if (
+        isAdmin ||
+        (user?.email &&
+          (domain?.created_by === user.email ||
+          (assignedUsers && domain?.id && assignedUsers[domain.id] === user.email)))
+        ) {
+        console.log('[Realtime] Domain change detected', payload); // Keep a simpler log
+        await loadDomains(); // Consider if loadDomains needs to be called here or just state update
         }
+      }
       )
       .subscribe();
 
@@ -1452,7 +1462,7 @@ export default function DomainsPage() {
                             domainId={domain.id}
                             domainName={domain.name}
                             hasFiles={domain.has_files || false}
-                            userId={domain.user_id}
+                            userId={domain.user_id ?? undefined}
                           />
                         </TableCell>
                         <TableCell>

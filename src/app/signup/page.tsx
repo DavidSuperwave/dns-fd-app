@@ -57,7 +57,7 @@ function SignupForm() {
         const { data: invitations, error: verifyError } = await supabaseAdmin
           .from('invitations')
           .select('*')
-          .eq('token', token)
+          .eq('token', token || '')
           .eq('email', email)
           .is('used_at', null)
           .single();
@@ -145,7 +145,7 @@ function SignupForm() {
       const { data: invitation, error: inviteError } = await supabaseAdmin
         .from('invitations')
         .select('*')
-        .eq('token', token)
+        .eq('token', token || '')
         .eq('email', email)
         .is('used_at', null)
         .single();
@@ -184,7 +184,7 @@ function SignupForm() {
         const { error: markUsedError } = await supabaseAdmin
           .from('invitations')
           .update({ used_at: new Date().toISOString() })
-          .eq('token', token);
+          .eq('token', token || '');
 
         if (markUsedError) {
           console.error('[Signup] Error marking invitation as used:', markUsedError);

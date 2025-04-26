@@ -127,8 +127,9 @@ export function useRealtimeUsers(isAdmin: boolean) {
             console.log('Real-time invitation insert:', payload);
             // Refresh users list to include new pending invite
             await loadUsers();
+            const newInvitation = payload.new as Invitation;
             // Safely access email using optional chaining, although 'new' should exist on INSERT
-            toast.info(`New invitation sent to: ${payload.new?.email || 'Unknown email'}`);
+            toast.info(`New invitation sent to: ${newInvitation.email || 'Unknown email'}`);
           }
         )
         .on('postgres_changes',
