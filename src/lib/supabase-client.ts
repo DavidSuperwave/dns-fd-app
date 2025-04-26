@@ -201,7 +201,11 @@ export async function fetchUsers(): Promise<UserProfile[]> {
         return [];
       }
 
-      return ownProfile ? [ownProfile] : [];
+      if (ownProfile && typeof ownProfile === 'object' && 'id' in ownProfile && 'email' in ownProfile) {
+  return [ownProfile as UserProfile];
+}
+return [];
+
     }
 
     // For admins, fetch both active users and pending invitations
@@ -236,7 +240,18 @@ export async function fetchUsers(): Promise<UserProfile[]> {
     }));
 
     // Combine active users and pending invites
-    return [...activeUsers, ...pendingInvites];
+    return [
+      ...activeUsers.map((user) => user as UserProfile),
+      ...pendingInvites.map((invite) => ({
+        id: invite.id,
+        email: invite.email,
+        role: invite.role,
+        status: invite.status,
+        active: invite.active,
+        created_at: invite.created_at,
+      }) as UserProfile),
+    ];
+    
 
   } catch (error) {
     console.error('Error in fetchUsers:', error);

@@ -54,9 +54,15 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
         const filePath = `${domainId}/${file.name}`;
         
         // Get signed URL for downloading
-        const { data: { signedUrl }, error: signedUrlError } = await supabaseAdmin.storage
+        const { data, error: signedUrlError } = await supabaseAdmin.storage
           .from('domain-csv-files')
           .createSignedUrl(filePath, 60); // URL valid for 60 seconds
+
+        if (!data || !data.signedUrl) {
+          throw new Error('Failed to generate signed URL');
+        }
+
+        const signedUrl = data.signedUrl;
 
         if (signedUrlError) throw signedUrlError;
 

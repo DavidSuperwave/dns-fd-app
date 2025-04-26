@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     }
 
     const domains = data.result || [];
-    console.log('[Zone Management] Found domains:', domains.map(d => d.name));
+    // console.log('[Zone Management] Found domains:', domains.map(d => d.name));
 
     // Process domains in batches to avoid rate limits
     const BATCH_SIZE = 5; // Process 5 domains at a time to stay under rate limit

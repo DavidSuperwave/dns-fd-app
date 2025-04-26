@@ -121,7 +121,7 @@ export function useScanProgress() {
           table: 'scan_progress',
           filter: "is_active=eq.true and status=neq.completed and status=neq.failed"
         },
-        (payload) => {
+        (payload: { eventType: string; new: ScanProgress }) => {
           console.log('[ScanProgress Hook] Received update:', payload);
           
           console.log('[ScanProgress] Received subscription update:', payload);

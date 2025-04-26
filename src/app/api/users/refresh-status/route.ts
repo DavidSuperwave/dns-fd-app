@@ -6,28 +6,39 @@ import { supabaseAdmin } from '@/lib/supabase-client'; // Import the admin clien
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
-  const cookieStore = cookies();
+  // Await the cookies() promise first
+  const resolvedCookieStore = await cookies();
 
   // Create Supabase client using createServerClient (from @supabase/ssr)
+  // Provide the cookie methods object
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          // Use the cookieStore directly (it's not a promise here)
-          return cookieStore.get(name)?.value;
+        get(name: string) { // Now synchronous, using the resolved store
+          return resolvedCookieStore.get(name)?.value;
         },
-        set(name: string, value: string, options: CookieOptions) {
-          // API Routes usually don't set request cookies, but implement if needed for response
-          // For now, this primarily needs 'get'
-          // cookieStore.set({ name, value, ...options }); // This would error as cookieStore is Readonly
-          console.warn(`[API Refresh Status] Attempted to set cookie '${name}' in API route (usually read-only).`);
+        set(name: string, _value: string, _options: CookieOptions) { // Keep unused params prefixed
+          // The `set` method is called by the Supabase client potentially.
+          // In Route Handlers, modifying cookies requires setting headers in the response.
+          // Since we are only reading auth state here, we can ignore this,
+          // but Supabase docs recommend try/catch for broader compatibility.
+          try {
+             // cookieStore.set({ name, value, ...options }); // This would error in Route Handler read context
+             console.warn(`[API Refresh Status] Supabase client attempted to set cookie '${name}' via Route Handler.`);
+          } catch (error) {
+             // Ignore error
+          }
         },
-        remove(name: string, options: CookieOptions) {
-          // API Routes usually don't remove request cookies
-          // cookieStore.set({ name, value: '', ...options }); // This would error as cookieStore is Readonly
-           console.warn(`[API Refresh Status] Attempted to remove cookie '${name}' in API route (usually read-only).`);
+        remove(name: string, _options: CookieOptions) { // Keep unused params prefixed
+          // Similar to `set`, modifying cookies requires response headers.
+          try {
+            // cookieStore.set({ name, value: '', ...options }); // This would error in Route Handler read context
+            console.warn(`[API Refresh Status] Supabase client attempted to remove cookie '${name}' via Route Handler.`);
+          } catch (error) {
+             // Ignore error
+          }
         },
       },
     }

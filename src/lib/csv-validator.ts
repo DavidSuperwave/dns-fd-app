@@ -51,7 +51,10 @@ function validateEmail(email: string): [string | null, string | null] {
 function cleanCsv(content: string): CleanedCsv | null {
   const delimiter = detectDelimiter(content.slice(0, 1024));
   const rows = parse(content, { delimiter });
-  const cleanedRows = rows.filter(row => row.some(cell => cell.trim()));
+  const cleanedRows = (rows as string[][]).filter((row: string[]) =>
+    row.some((cell: string) => cell.trim())
+  );
+  
   
   if (cleanedRows.length === 0) return null;
 
@@ -108,7 +111,7 @@ export async function validateCsvContent(content: string): Promise<ValidationRes
       lineNumber++;
       const lineNumberInFile = lineNumber + 1; // Headers are on line 1, data starts at line 2
 
-      if (Object.values(row).some(containsNonEnglishCharacters)) {
+      if (Object.values(row).some(value => containsNonEnglishCharacters(value as string))) {
         nonEnglishDetected = true;
         errors.push(`Non-English characters detected (Line: ${lineNumberInFile})`);
         break;

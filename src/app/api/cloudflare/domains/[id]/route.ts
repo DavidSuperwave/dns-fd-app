@@ -11,10 +11,10 @@ const CLOUDFLARE_AUTH_EMAIL = 'dns@superwave.ai'; // Email associated with the t
 // Using the standard Next.js App Router type for route handlers with explicit return type
 export async function DELETE(
   request: NextRequest, // Use NextRequest
-  context // Remove type annotation
-): Promise<Response> {
+  { params }: { params: Promise<{ id: string }> } // Remove type annotation
+): Promise<NextResponse> {
   try {
-    const { id } = context.params; // This is the Zone ID
+    const id = await params; // This is the Zone ID
 
     // Delete zone from Cloudflare using the direct zone endpoint
     // Reverting path based on diagnostic script that worked

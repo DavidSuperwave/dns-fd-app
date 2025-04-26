@@ -1,6 +1,19 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+interface SupabaseUser {
+  id: string;
+  email: string | null; 
+  user_metadata: {
+    role: string;
+    name: string;
+    is_admin: boolean;
+  };
+}
+
+interface ListUsersResponse {
+  users: SupabaseUser[];
+}
 // Supabase client with admin privileges
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zfwaqmkqqykfptczwqwo.supabase.co',
@@ -40,20 +53,18 @@ export async function POST() { // Remove unused 'request' parameter
       );
     }
 
-    console.log(`[Admin Sync] Ensuring admin rights for user ${email}`);
-
-    // Find the user by email
     const { data: users, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-    
-    if (listError) {
-      console.error('Error listing users:', listError);
-      return NextResponse.json(
-        { success: false, error: 'Failed to list users' },
-        { status: 500 }
-      );
-    }
-    
-    const adminUser = users.users.find(user => user.email === email);
+
+  if (listError) {
+    console.error('Error listing users:', listError);
+    return NextResponse.json(
+      { success: false, error: 'Failed to list users' },
+      { status: 500 }
+    );
+  }
+
+  // Type assertion to tell TypeScript that 'users' is an array of 'SupabaseUser' objects
+  const adminUser = users.users.find(user => user.email && user.email === email);
     
     if (!adminUser) {
       return NextResponse.json(

@@ -57,7 +57,7 @@ function SignupForm() {
         const { data: invitations, error: verifyError } = await supabaseAdmin
           .from('invitations')
           .select('*')
-          .eq('token', token)
+          .eq('token', token || '')
           .eq('email', email)
           .is('used_at', null)
           .single();
@@ -71,7 +71,17 @@ function SignupForm() {
         }
 
         setIsInvitationValid(true);
-        setInvitationData(invitations);
+        // Construct a new object with the correct type
+        if (invitations) {
+          const newInvitationData: InvitationData = {
+            email: invitations.email as string, // Assert type
+            role: invitations.role as string, // Assert type
+            token: invitations.token as string, // Assert type
+            created_at: invitations.created_at as string, // Assert type
+            created_by: invitations.created_by as string, // Assert type
+          };
+          setInvitationData(newInvitationData);
+        }
       } catch (error) {
         console.error('Error verifying invitation:', error);
         toast.error('Error verifying invitation');
@@ -135,7 +145,7 @@ function SignupForm() {
       const { data: invitation, error: inviteError } = await supabaseAdmin
         .from('invitations')
         .select('*')
-        .eq('token', token)
+        .eq('token', token || '')
         .eq('email', email)
         .is('used_at', null)
         .single();
@@ -174,7 +184,7 @@ function SignupForm() {
         const { error: markUsedError } = await supabaseAdmin
           .from('invitations')
           .update({ used_at: new Date().toISOString() })
-          .eq('token', token);
+          .eq('token', token || '');
 
         if (markUsedError) {
           console.error('[Signup] Error marking invitation as used:', markUsedError);

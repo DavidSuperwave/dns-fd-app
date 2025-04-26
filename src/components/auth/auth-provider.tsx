@@ -3,7 +3,8 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, supabaseAdmin } from "../../lib/supabase-client";
-import { Session, User } from "@supabase/supabase-js";
+import { User } from "@supabase/supabase-js";
+import { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 interface AuthProviderProps {
   children: React.ReactNode;
@@ -45,7 +46,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
 
 
   // Initialize state with the server-fetched session
-  const [session, setSession] = useState<Session | null>(initialSession);
+  const [session, setSession] = useState<Session | null>(initialSession ?? null);
   const [user, setUser] = useState<User | null>(initialSession?.user ?? null);
   const [isAdmin, setIsAdmin] = useState(checkAdminStatus(initialSession?.user ?? null));
   const [isLoading, setIsLoading] = useState(false); // Start as false since we have initial data
@@ -107,7 +108,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
 
     console.log('[Auth Provider] Setting up onAuthStateChange listener.');
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
+      async (event: AuthChangeEvent, currentSession: Session | null) => {
         // Use the session from the event listener
         const currentUser = currentSession?.user ?? null;
         setSession(currentSession);

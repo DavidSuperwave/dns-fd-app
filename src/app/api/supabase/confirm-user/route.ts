@@ -19,10 +19,10 @@ export async function POST(request: Request) {
 
     console.log(`[API] Confirming email for user ${email}`);
 
-    // Update user's email_confirmed_at using admin API
+    // Confirm user's email using admin API
     const { error: updateError } = await adminSupabase.auth.admin.updateUserById(
       userId,
-      { email_confirmed_at: new Date().toISOString() }
+      { email_confirm: true } // Use email_confirm: true instead of setting timestamp directly
     );
 
     if (updateError) {
