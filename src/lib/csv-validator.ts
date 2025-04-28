@@ -74,89 +74,148 @@ function cleanCsv(content: string): CleanedCsv | null {
 export async function validateCsvContent(content: string): Promise<ValidationResult> {
   const errors: string[] = [];
   const domainSet = new Set<string>();
-  const emailLines: Record<string, number> = {};
+  const emailLines: Record<string, number> = {}; // Tracks email address and its first line number
   const repeatedEmailsWithLines: [string, string][] = [];
-  let lineNumber = 0;
   let nonEnglishDetected = false;
+  let parsedRows: any[] = []; // Define outside try block
 
   try {
-    const cleaned = cleanCsv(content);
-    if (!cleaned) {
-      errors.push("CSV file appears empty or contains no valid data.");
+    // 1. Detect delimiter directly from raw content
+    const delimiter = detectDelimiter(content.slice(0, 1024));
+    console.log(`[CSV Validator] Detected delimiter: "${delimiter}"`);
+
+    // 2. Parse the *raw* content directly using csv-parse
+    //    Let csv-parse handle headers, empty lines, trimming, and column count variations.
+    parsedRows = parse(content, {
+      columns: true,             // Treat first row as headers
+      delimiter: delimiter,
+      skip_empty_lines: true,    // Ignore empty lines
+      trim: true,                // Trim whitespace from cells/headers
+      relax_column_count: true,  // Allow rows with more/fewer columns than headers
+      bom: true                  // Handle potential Byte Order Mark
+    });
+    console.log(`[CSV Validator] Parsed ${parsedRows.length} rows directly from content.`);
+
+    // 3. Basic check after parsing
+    if (!parsedRows || parsedRows.length === 0) {
+      errors.push("CSV file appears empty or contains no valid data rows.");
       return { errors, repeatedEmails: [], hasErrors: true };
     }
 
-    const { rows, delimiter } = cleaned;
+    // Log detected headers
+    const headers = Object.keys(parsedRows[0]);
+    console.log("[CSV Validator] Detected headers:", headers);
 
-    // Check and standardize headers
-    const firstRow = rows[0];
-    const firstRowStr = firstRow.join(',');
-    let finalRows: string[][];
+    // Check if required headers exist (case-insensitive check after trim)
+    const hasDisplayName = headers.some(h => h.toLowerCase() === 'displayname');
+    const hasEmailAddress = headers.some(h => h.toLowerCase() === 'emailaddress');
 
-    if (firstRowStr.includes('@')) {
-      // First row contains '@', so it's data; add headers
-      const headers = ['DisplayName', 'EmailAddress'];
-      finalRows = [headers, ...rows];
-    } else {
-      // First row does not contain '@', replace with standard headers
-      rows[0] = ['DisplayName', 'EmailAddress'];
-      finalRows = rows;
+    if (!hasDisplayName || !hasEmailAddress) {
+      errors.push("CSV header row must contain both 'DisplayName' and 'EmailAddress'.");
+      return { errors, repeatedEmails: [], hasErrors: true };
     }
 
-    // Parse the modified CSV
-    const csvString = finalRows.map(row => row.join(delimiter)).join('\n');
-    const parsedRows = parse(csvString, { columns: true, delimiter });
+    // Find the exact header names (preserving case) for later access
+    const displayNameHeader = headers.find(h => h.toLowerCase() === 'displayname')!;
+    const emailAddressHeader = headers.find(h => h.toLowerCase() === 'emailaddress')!;
+    console.log(`[CSV Validator] Using headers: DisplayName='${displayNameHeader}', EmailAddress='${emailAddressHeader}'`);
 
-    // Validate each row
-    for (const row of parsedRows) {
-      lineNumber++;
-      const lineNumberInFile = lineNumber + 1; // Headers are on line 1, data starts at line 2
+    // Validate each data row (lineNumber starts from 1 for data rows)
+    parsedRows.forEach((row, index) => {
+      const lineNumber = index + 1;
+      const lineNumberInFile = lineNumber + 1; // +1 because header is line 1
 
-      // Check for non-English characters specifically in DisplayName and EmailAddress
-      const displayName = row.DisplayName || '';
-      const emailAddress = row.EmailAddress || '';
-      if (containsNonEnglishCharacters(displayName) || containsNonEnglishCharacters(emailAddress)) {
-        nonEnglishDetected = true; // Keep flag for hasErrors calculation
-        // Add more specific error message
-        errors.push(`Invalid characters found. Please use only standard English letters, numbers, and symbols. (Check Line: ${lineNumberInFile})`);
-        // Don't break immediately, continue checking other rows for more errors
+      // Defensive check in case row is null/undefined somehow
+      if (!row) {
+        console.warn(`[CSV Validator] Skipping null/undefined row at index ${index}`);
+        return;
       }
 
-      const email = row.EmailAddress.trim().toLowerCase();
-      if (email in emailLines) {
+      const displayName = row[displayNameHeader] || '';
+      const emailAddress = row[emailAddressHeader] || '';
+
+      // Basic Row Checks
+      if (!emailAddress && displayName) { // Only error if email is missing but display name is present
+         errors.push(`Missing EmailAddress on data row ${lineNumber}. (Check Line: ${lineNumberInFile})`);
+         return; // Skip further validation for this row
+      } else if (!emailAddress && !displayName) {
+         // Skip entirely empty rows silently (should be handled by skip_empty_lines, but belt-and-suspenders)
+         return;
+      }
+
+      // Content Validation
+      if (containsNonEnglishCharacters(displayName) || containsNonEnglishCharacters(emailAddress)) {
+        nonEnglishDetected = true;
+        errors.push(`Invalid characters found in DisplayName or EmailAddress. Please use only standard English letters, numbers, and symbols. (Check Line: ${lineNumberInFile})`);
+      }
+
+      const email = emailAddress.toLowerCase();
+      const [emailValidationError, domain] = validateEmail(email);
+      if (emailValidationError) {
+        errors.push(`"${emailAddress}": ${emailValidationError} (Check Line: ${lineNumberInFile})`);
+      }
+      if (domain) {
+        domainSet.add(domain);
+      }
+
+      if (emailLines[email]) {
         repeatedEmailsWithLines.push([
-          email,
+          emailAddress,
           `Lines: ${emailLines[email]} & ${lineNumberInFile}`
         ]);
       } else {
         emailLines[email] = lineNumberInFile;
       }
+    });
 
-      const [emailValidationError, domain] = validateEmail(email);
-      if (emailValidationError) {
-        // Add the specific email and the improved error message
-        errors.push(`"${email}": ${emailValidationError} (Check Line: ${lineNumberInFile})`);
-      }
-      if (domain) domainSet.add(domain);
-    }
-
+    // File-level Checks
     if (domainSet.size > 1) {
       errors.push("All emails in the file must belong to the same domain (e.g., all '@company.com'). Found multiple domains.");
     }
 
-    // Filter out duplicate non-English error messages if present
+    // Final Result
     const uniqueErrors = [...new Set(errors)];
+    const hasErrors = uniqueErrors.length > 0 || nonEnglishDetected || repeatedEmailsWithLines.length > 0;
+
+    console.log(`[CSV Validator] Validation complete. Has Errors: ${hasErrors}, Errors: ${uniqueErrors.length}, Repeated: ${repeatedEmailsWithLines.length}`);
+    return {
+      errors: uniqueErrors,
+      repeatedEmails: repeatedEmailsWithLines,
+      hasErrors: hasErrors
+    };
+
+  } catch (e: any) {
+    // Log the *entire* error object to the console for maximum detail
+    console.error("[CSV Validator] DETAILED PARSING ERROR OBJECT:", e);
+
+    // Attempt to extract common properties for a more informative user message
+    let userErrorMessage = "An unexpected error occurred while reading the CSV file.";
+    let errorDetails = [];
+
+    if (e && typeof e === 'object') {
+      if (e.message) {
+        // Use the library's message if available
+        userErrorMessage = `Error parsing CSV: ${e.message}`;
+      }
+      if (e.code) errorDetails.push(`Code: ${e.code}`);
+      if (e.lines) errorDetails.push(`Near line: ${e.lines}`);
+      // Add other potential properties if needed, e.g., e.column
+      if (e.column) errorDetails.push(`Column: ${e.column}`);
+    } else if (e instanceof Error) {
+       // Fallback for standard Error objects
+       userErrorMessage = `Error reading CSV: ${e.message}`;
+    } else {
+       // Fallback for non-object errors
+       userErrorMessage = `An unknown error occurred: ${String(e)}`;
+    }
+
+    // Combine the main message with details if any were found
+    const finalUserMessage = errorDetails.length > 0
+      ? `${userErrorMessage} (${errorDetails.join(', ')}). Please check the file format.`
+      : `${userErrorMessage}. Please check the file format.`;
 
     return {
-      errors: uniqueErrors, // Use unique errors
-      // Removed duplicate 'errors' property
-      repeatedEmails: repeatedEmailsWithLines,
-      hasErrors: uniqueErrors.length > 0 || nonEnglishDetected || repeatedEmailsWithLines.length > 0 // Check length of uniqueErrors
-    };
-  } catch (e) {
-    console.error("CSV Validation Error:", e); // Log the actual error for debugging
-    return {
-      errors: [`An unexpected error occurred while reading the CSV file. Please check the file format.`],
+      errors: [finalUserMessage],
       repeatedEmails: [],
       hasErrors: true
     };

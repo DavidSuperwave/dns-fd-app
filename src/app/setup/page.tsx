@@ -4,13 +4,17 @@ import React, { useState } from "react"; // Removed unused useEffect
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { toast } from "sonner";
-import { supabase } from "../../lib/supabase-browser";
+// Keep the stashed version for client component
+import { createClient } from "../../lib/supabase-client"; // Correct import
 import { useRouter } from "next/navigation";
 
 export default function SetupPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSetupComplete, setIsSetupComplete] = useState(false);
   const router = useRouter();
+
+  // Create Supabase client instance
+  const supabase = createClient();
 
   const createAdminAccount = async () => {
     setIsLoading(true);

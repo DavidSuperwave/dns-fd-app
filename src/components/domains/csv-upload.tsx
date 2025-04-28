@@ -98,7 +98,7 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
         console.log(`[loadFiles] Updating has_files flag via API for ${domainId} to ${hasAnyFiles}.`);
         try {
           const updateResponse = await fetch(`/api/domains/${domainId}/has-files`, {
-            method: 'PATCH',
+            method: 'POST', // Changed to POST
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ has_files: hasAnyFiles })
           });
@@ -205,7 +205,7 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       console.log(`[handleFileChange] Updating has_files flag via API for ${domainId} to true.`);
       try {
         const updateResponse = await fetch(`/api/domains/${domainId}/has-files`, {
-          method: 'PATCH',
+          method: 'POST', // Changed to POST
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ has_files: true })
         });
@@ -253,19 +253,27 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
   };
 
   const handleDelete = async (fileName: string) => {
+    const filePath = `${domainId}/${fileName}`;
+    const toastId = toast.loading(`Deleting ${fileName}...`);
     try {
-      // Use regular client - This might fail if RLS restricts deletes
-      const { error: deleteError } = await supabase.storage
-        .from('domain-csv-files')
-        .remove([`${domainId}/${fileName}`]);
+      const response = await fetch('/api/storage/delete-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath }),
+      });
 
-      if (deleteError) throw deleteError;
+      const result = await response.json();
 
-      await loadFiles(); // This will also update has_files if needed
-      toast.success('File deleted successfully');
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || `Server responded with ${response.status}`);
+      }
+
+      toast.success(`File ${fileName} deleted successfully.`, { id: toastId });
+      await loadFiles(); // Refresh the file list
     } catch (error) {
-      console.error('Delete error:', error);
-      toast.error('Failed to delete file');
+      console.error(`Error deleting file ${filePath}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      toast.error(`Failed to delete file: ${errorMessage}`, { id: toastId });
     }
   };
 

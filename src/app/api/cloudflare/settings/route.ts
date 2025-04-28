@@ -1,12 +1,44 @@
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+  // Keep the ssr version for App Router
+  import { createServerClient, type CookieOptions } from '@supabase/ssr';
+  import { cookies } from 'next/headers';
 
-// Save Cloudflare API settings
+  // Save Cloudflare API settings
 export async function POST(request: Request) {
   try {
-    const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+    // Keep the ssr version for App Router
+    // Create Supabase client for POST handler
+    const resolvedCookieStore = await cookies(); // Call await cookies() once here
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) { // Remove async
+            try {
+              return resolvedCookieStore.get(name)?.value;
+            } catch (error) {
+               console.error(`Error getting cookie "${name}":`, error);
+               return undefined;
+            }
+          },
+          set(name: string, value: string, options: CookieOptions) { // Remove async
+            try {
+              resolvedCookieStore.set({ name, value, ...options });
+            } catch (error) {
+              console.warn(`createServerClient set cookie error (ignorable if middleware exists): ${error}`);
+            }
+          },
+          remove(name: string, options: CookieOptions) { // Remove async
+            try {
+              resolvedCookieStore.set({ name, value: '', ...options });
+            } catch (error) {
+              console.warn(`createServerClient remove cookie error (ignorable if middleware exists): ${error}`);
+            }
+          },
+        },
+      }
+    );
     // Verify user is authenticated and has admin role
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) {
@@ -104,10 +136,41 @@ export async function POST(request: Request) {
 }
 
 // Get current Cloudflare API settings
-export async function GET() { // Remove unused 'request' parameter
+export async function GET() {
   try {
-    const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+    // Keep the ssr version for App Router
+    // Create Supabase client for GET handler
+    const resolvedCookieStore = await cookies(); // Call await cookies() once here
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) { // Remove async
+            try {
+              return resolvedCookieStore.get(name)?.value;
+            } catch (error) {
+               console.error(`Error getting cookie "${name}":`, error);
+               return undefined;
+            }
+          },
+          set(name: string, value: string, options: CookieOptions) { // Remove async
+            try {
+              resolvedCookieStore.set({ name, value, ...options });
+            } catch (error) {
+              console.warn(`createServerClient set cookie error (ignorable if middleware exists): ${error}`);
+            }
+          },
+          remove(name: string, options: CookieOptions) { // Remove async
+            try {
+              resolvedCookieStore.set({ name, value: '', ...options });
+            } catch (error) {
+              console.warn(`createServerClient remove cookie error (ignorable if middleware exists): ${error}`);
+            }
+          },
+        },
+      }
+    );
     // Verify user is authenticated and has admin role
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) {
