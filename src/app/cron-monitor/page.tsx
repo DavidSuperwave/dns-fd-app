@@ -15,7 +15,7 @@ import {
 } from "../../components/ui/table";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
-import { supabase } from "../../lib/supabase-client";
+import { supabase } from "../../lib/supabase-browser";
 import { toast } from "sonner";
 import { useAuth } from "../../components/auth/auth-provider";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";

@@ -59,7 +59,7 @@ interface ResultInfo {
 
 // Selected domain interface
 interface SelectedDomain {
-  id: string;
+  cloudflare_id: string;
   name: string;
 }
 
@@ -176,7 +176,8 @@ export default function DNSRecordsPage() {
   const loadDnsRecords = useCallback(async (zoneId: string, page: number = 1, useMockData: boolean = false) => {
     setIsLoading(true);
     setIsError(false);
-    
+    console.log("Loading DNS records for zoneId:", zoneId, "Page:", page, "Use mock data:", useMockData);
+    console.log("Selected domain:", selectedDomain);
     try {
       if (useMockData) {
         // Use mock data
@@ -184,7 +185,7 @@ export default function DNSRecordsPage() {
         const customizedMockRecords = selectedDomain
           ? mockDnsRecords.map(record => ({
               ...record,
-              zone_id: selectedDomain.id,
+              zone_id: selectedDomain.cloudflare_id,
               zone_name: selectedDomain.name,
               name: record.name.replace('example.com', selectedDomain.name)
             }))
@@ -229,7 +230,7 @@ export default function DNSRecordsPage() {
   // Fetch DNS records from Cloudflare API when selectedDomain changes
   useEffect(() => {
     if (selectedDomain) {
-      loadDnsRecords(selectedDomain.id, currentPage);
+      loadDnsRecords(selectedDomain.cloudflare_id, currentPage);
     }
   }, [selectedDomain, currentPage, loadDnsRecords]);
 
@@ -264,7 +265,7 @@ export default function DNSRecordsPage() {
           content: newRecord.content,
           ttl: newRecord.ttl,
           proxied: newRecord.proxied,
-          zone_id: selectedDomain.id,
+          zone_id: selectedDomain.cloudflare_id,
           zone_name: selectedDomain.name,
           created_on: new Date().toISOString(),
           modified_on: new Date().toISOString()
@@ -292,11 +293,11 @@ export default function DNSRecordsPage() {
           proxied: newRecord.proxied
         };
         
-        const result = await createDnsRecord(selectedDomain.id, recordToAdd);
+        const result = await createDnsRecord(selectedDomain.cloudflare_id, recordToAdd);
         
         if (result) {
           toast.success("DNS record added successfully");
-          loadDnsRecords(selectedDomain.id, currentPage);
+          loadDnsRecords(selectedDomain.cloudflare_id, currentPage);
           setIsDialogOpen(false);
           
           // Reset form
@@ -336,11 +337,11 @@ export default function DNSRecordsPage() {
           toast.success("DNS record deleted successfully (demo)");
         } else {
           // Real API call
-          const result = await deleteDnsRecord(selectedDomain.id, recordId);
+          const result = await deleteDnsRecord(selectedDomain.cloudflare_id, recordId);
           
           if (result) {
             toast.success("DNS record deleted successfully");
-            loadDnsRecords(selectedDomain.id, currentPage);
+            loadDnsRecords(selectedDomain.cloudflare_id, currentPage);
           } else {
             toast.error("Failed to delete DNS record");
           }
@@ -510,7 +511,7 @@ export default function DNSRecordsPage() {
           <div className="bg-yellow-50 p-4 mb-4 rounded-md border border-yellow-200">
             <p className="text-yellow-800">
               Currently showing sample data for demonstration. 
-              <Button variant="link" className="p-0 h-auto ml-2" onClick={() => selectedDomain && loadDnsRecords(selectedDomain.id, currentPage, false)}>
+              <Button variant="link" className="p-0 h-auto ml-2" onClick={() => selectedDomain && loadDnsRecords(selectedDomain.cloudflare_id, currentPage, false)}>
                 Try loading real data
               </Button>
             </p>
@@ -532,10 +533,10 @@ export default function DNSRecordsPage() {
           <div className="flex justify-center items-center h-64">
             <div className="text-center">
               <p className="text-lg text-red-600 mb-4">Failed to load DNS records from Cloudflare API</p>
-              <Button onClick={() => selectedDomain && loadDnsRecords(selectedDomain.id, currentPage, true)} className="mr-2">
+              <Button onClick={() => selectedDomain && loadDnsRecords(selectedDomain.cloudflare_id, currentPage, true)} className="mr-2">
                 Use Sample Data
               </Button>
-              <Button variant="outline" onClick={() => selectedDomain && loadDnsRecords(selectedDomain.id, currentPage)}>
+              <Button variant="outline" onClick={() => selectedDomain && loadDnsRecords(selectedDomain.cloudflare_id, currentPage)}>
                 Retry API Connection
               </Button>
             </div>

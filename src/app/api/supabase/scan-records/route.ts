@@ -4,6 +4,11 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 export async function POST() { // Remove unused 'request' parameter
   try {
     // Create initial record
+    if (!supabaseAdmin) {
+      console.error('Supabase client is not initialized');
+      return NextResponse.json({ success: false, error: 'Supabase client is not initialized' }, { status: 500 });
+    }
+
     const { data, error } = await supabaseAdmin
       .from('scan_results')
       .insert({
@@ -39,6 +44,11 @@ export async function POST() { // Remove unused 'request' parameter
 
 export async function PUT(request: Request) {
   try {
+    if (!supabaseAdmin) {
+      console.error('Supabase client is not initialized');
+      return NextResponse.json({ success: false, error: 'Supabase client is not initialized' }, { status: 500 });
+    }
+
     const { id, progress, ...updateData } = await request.json();
 
     if (!id) {
@@ -78,6 +88,11 @@ export async function PUT(request: Request) {
 
 export async function GET() {
   try {
+    if (!supabaseAdmin) {
+      console.error('Supabase client is not initialized');
+      return NextResponse.json({ success: false, error: 'Supabase client is not initialized' }, { status: 500 });
+    }
+
     const { data, error } = await supabaseAdmin
       .from('scan_results')
       .select('*')

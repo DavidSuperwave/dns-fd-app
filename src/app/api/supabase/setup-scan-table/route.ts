@@ -5,6 +5,10 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 async function setupScanTable() {
   try {
     // Create initial scan record to test/create table
+    if (!supabaseAdmin) {
+      throw new Error('Supabase client is not initialized');
+    }
+
     const { error: createError } = await supabaseAdmin
       .from('scan_results')
       .insert([{
@@ -76,6 +80,13 @@ async function setupScanTable() {
 export async function GET() {
   try {
     // Check if table exists by attempting to select
+    if (!supabaseAdmin) {
+      return NextResponse.json({
+        success: false,
+        error: 'Supabase client is not initialized'
+      }, { status: 500 });
+    }
+
     const { error: checkError } = await supabaseAdmin
       .from('scan_results')
       .select('id')

@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '../../../../lib/supabase-client';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
 // Test connection to Cloudflare API with provided credentials
 export async function POST(request: Request) {
   try {
+    const cookieStore = cookies();
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
     // Verify user is authenticated and has admin role
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) {

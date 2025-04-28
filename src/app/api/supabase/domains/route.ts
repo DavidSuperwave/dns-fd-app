@@ -6,6 +6,11 @@ export async function POST(request: Request) {
     const body = await request.json();
     console.log('Inserting domain into Supabase:', body);
 
+    if (!supabaseAdmin) {
+      console.error('Supabase client is not initialized.');
+      return NextResponse.json({ error: 'Supabase client is not initialized.' }, { status: 500 });
+    }
+
     const { data, error } = await supabaseAdmin
       .from('domains')
       .insert({

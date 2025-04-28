@@ -1,6 +1,3 @@
--- Enable storage if not already enabled
-CREATE EXTENSION IF NOT EXISTS "storage" SCHEMA "storage";
-
 -- Create storage bucket for CSV files
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('domain-csv-files', 'domain-csv-files', false)

@@ -9,9 +9,9 @@ export const dynamic = 'force-dynamic';
 // PATCH handler for updating the has_files flag on a domain
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const domainIdToUpdate = params.id;
+  const domainIdToUpdate = (await params).id;
   const resolvedCookieStore = await cookies();
 
   // Create Supabase client for auth check

@@ -189,173 +189,170 @@ export default function DomainsPage() {
   const loadDomains = useCallback(async ({ useMockData = false, signal }: { useMockData?: boolean; signal?: AbortSignal }) => {
     setIsLoading(true);
     setIsError(false);
-    
+
     try {
-      if (useMockData) {
-        // Use mock data with last sync time
-        const mockWithSync = mockDomains.map(domain => ({
-          ...domain,
-          last_synced: lastSyncTime || domain.last_synced
-        }));
-        setAllDomains(mockWithSync);
-        setDomains(mockWithSync);
-        setFilteredDomains(mockWithSync);
-        setResultInfo(mockResultInfo);
-        setTotalPages(mockResultInfo.total_pages);
-        setUsingMockData(true);
-        toast.info("Using sample data for demonstration");
-      } else {
+        if (useMockData) {
+            // Mock data loading
+            const mockWithSync = mockDomains.map(domain => ({
+                ...domain,
+                last_synced: lastSyncTime || domain.last_synced,
+            }));
+            setAllDomains(mockWithSync);
+            setDomains(mockWithSync);
+            setFilteredDomains(mockWithSync);
+            setResultInfo(mockResultInfo);
+            setTotalPages(mockResultInfo.total_pages);
+            setUsingMockData(true);
+            toast.info("Using sample data for demonstration");
+            return;
+        }
+
         console.log("Loading domains from database...");
-        
-        try {
-          // Get the latest completed scan for timestamp
-          const { data: scanData } = await supabase
+
+        const isAuthReady = isAdmin !== undefined && (isAdmin || user?.email);
+        if (!isAuthReady) {
+            console.warn('[loadDomains] Auth not ready or missing user email. Waiting for auth state.');
+            return;
+        }
+
+        // Ensure that state is populated before querying
+        console.log("Auth check - isAdmin:", isAdmin, "user.email:", user?.email);
+
+        const PAGE_SIZE = 25;
+
+        // Get last sync time
+        const { data: scanData } = await supabase
             .from('scan_results')
             .select('completed_at, updated_at')
             .eq('status', 'completed')
             .order('created_at', { ascending: false })
             .limit(1)
-            .abortSignal(signal)
             .single();
 
-          // Parse and format the timestamp to ISO string
-          const timestamp = scanData?.completed_at || scanData?.updated_at;
-          const syncTime = timestamp ? new Date(timestamp as string).toISOString() : null;
-          setLastSyncTime(syncTime);
+        const timestamp = scanData?.completed_at || scanData?.updated_at;
+        setLastSyncTime(timestamp ? new Date(timestamp as string).toISOString() : null);
 
-          // Build query base without limit/range - we'll use manual pagination
-          let queryBase = supabase.from('domains').select('*', { count: 'exact' });
+        /** --------------
+         * Build filter conditions
+         * -------------- */
+        const countQuery = supabase.from('domains').select('*', { count: 'exact', head: true });
+        const pageQuery = supabase.from('domains').select('*');
 
-          // For non-admin users, filter by assigned domains *only if email is available*
-          if (!isAdmin && user?.email) { // Ensure user.email is truthy before proceeding
-            console.log(`[loadDomains] Applying user filter for: ${user.email}`);
+        // For non-admin users, restrict domains by assigned IDs
+        if (!isAdmin && user?.email) {
             const { data: assignments, error: assignmentError } = await supabase
-              .from('domain_assignments')
-              .select('domain_id')
-              .eq('user_email', user.email)
-              .abortSignal(signal);
+                .from('domain_assignments')
+                .select('domain_id')
+                .eq('user_email', user.email)
+                .abortSignal(signal ?? new AbortController().signal);
 
-            if (assignmentError) {
-                console.error('Error fetching domain assignments:', assignmentError);
-                // Decide how to handle: maybe show error, or proceed without filter?
-                // For now, let's proceed without filter but log the error.
-                toast.error(`Error fetching your domain assignments: ${assignmentError.message}`);
-            } else if (!assignments || assignments.length === 0) {
-              console.log(`No domains assigned to user ${user.email}`);
-              setAllDomains([]);
-              setDomains([]);
-              setFilteredDomains([]);
-              setResultInfo(null);
-              setTotalPages(1);
-              return;
+            if (assignmentError || !assignments?.length) {
+                console.log(`No domains assigned to user ${user.email}`);
+                setAllDomains([]);
+                setDomains([]);
+                setFilteredDomains([]);
+                setResultInfo(null);
+                setTotalPages(1);
+                return;
             }
 
-            const assignedDomainIds = assignments.map((a: { domain_id: string }) => a.domain_id); // Add type hint
-            console.log(`[loadDomains] Found ${assignedDomainIds.length} assigned domain IDs for ${user.email}`);
-            queryBase = queryBase.in('id', assignedDomainIds);
-          } else if (!isAdmin && user) {
-              // User object exists but email might be missing temporarily, or user has no email?
-              // Avoid filtering, but log this state.
-              console.warn(`[loadDomains] Non-admin user detected, but user.email is not available. Skipping domain filtering. User object:`, user);
-          }
+            const assignedDomainIds = assignments.map(a => a.domain_id);
 
-          // Apply search filter
-          if (searchQuery.trim()) {
-            queryBase = queryBase.ilike('name', `%${searchQuery.trim()}%`);
-          }
+            countQuery.in('id', assignedDomainIds);
+            pageQuery.in('id', assignedDomainIds);
+        }
 
-          // Apply status filter
-          if (statusFilter !== "all") {
+        // Apply search filter
+        if (searchQuery.trim()) {
+            countQuery.ilike('name', `%${searchQuery.trim()}%`);
+            pageQuery.ilike('name', `%${searchQuery.trim()}%`);
+        }
+
+        // Apply status filter
+        if (statusFilter !== "all") {
             if (statusFilter === "paused") {
-              queryBase = queryBase.eq('paused', true);
+                countQuery.eq('paused', true);
+                pageQuery.eq('paused', true);
             } else {
-              queryBase = queryBase.eq('paused', false).eq('status', statusFilter);
+                countQuery.eq('paused', false).eq('status', statusFilter);
+                pageQuery.eq('paused', false).eq('status', statusFilter);
             }
-          }
+        }
 
-          // Add consistent ordering
-          queryBase = queryBase.order('modified_on', { ascending: false });
+        // Order results
+        pageQuery.order('modified_on', { ascending: false });
 
-          console.log('Base query built:', {
-            isAdmin,
-            hasFilters: searchQuery.trim() || statusFilter !== "all",
-            userEmail: user?.email
-          });
+        /** --------------
+         * Fetch total count
+         * -------------- */
+        const { count, error: countError, status, statusText } = await countQuery.abortSignal(signal ?? new AbortController().signal);
 
-          // Define page size
-          const PAGE_SIZE = 25;
+        if (countError) {
+            console.error('Count query failed:', {
+                countError,
+                status,
+                statusText,
+                userEmail: user?.email,  // Log user email to see if it's undefined
+            });
+            throw new Error('Count query failed');
+        }
 
-          // First get count of matching records based on filters
-          const { count, error: countError } = await queryBase.abortSignal(signal);
+        console.log(`Count query successful: totalCount: ${count}, status: ${status}, statusText: ${statusText}`);
 
-          if (countError) {
-            console.error('Count query error:', countError);
-            throw countError;
-          }
+        const totalCount = count ?? 0;
+        const calculatedTotalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
-          const totalCount = count || 0;
-          const calculatedTotalPages = Math.ceil(totalCount / PAGE_SIZE) || 1; // Ensure at least 1 page
-          console.log(`Total matching records: ${totalCount}, Total Pages: ${calculatedTotalPages}`);
-
-          // Ensure current page is valid
-          const validPage = Math.min(Math.max(1, currentPage), calculatedTotalPages);
-          if (validPage !== currentPage) {
+        // Adjust current page if invalid
+        const validPage = Math.min(Math.max(1, currentPage), calculatedTotalPages);
+        if (validPage !== currentPage) {
             console.log(`Adjusting current page from ${currentPage} to ${validPage}`);
-            // Update state immediately if needed, or let the final state update handle it
-             setCurrentPage(validPage); // Update state here
-          }
+            setCurrentPage(validPage);
+        }
 
-          // Calculate range for the current valid page
-          const startIndex = (validPage - 1) * PAGE_SIZE;
-          const endIndex = startIndex + PAGE_SIZE - 1;
-          console.log(`Fetching page ${validPage}/${calculatedTotalPages} (rows ${startIndex}-${endIndex})`);
+        // Calculate range for page
+        const startIndex = (validPage - 1) * PAGE_SIZE;
+        const endIndex = startIndex + PAGE_SIZE - 1;
 
-          // Fetch only the data for the current page
-          const { data: pageData, error: pageError } = await queryBase
-            .range(startIndex, endIndex)
-            .abortSignal(signal);
+        /** --------------
+         * Fetch page data
+         * -------------- */
+        const { data: pageData, error: pageError, status: pageStatus, statusText: pageStatusText } = await pageQuery.abortSignal(signal ?? new AbortController().signal);
 
-          if (pageError) {
-            console.error(`Error fetching page ${validPage}:`, pageError);
-            throw pageError;
-          }
-
-          const typedPageData = (pageData as unknown as CloudflareDomain[]) || [];
-
-          console.log('Fetched page data:', {
-            count: typedPageData.length,
-            hasData: typedPageData.length > 0,
-            firstItem: typedPageData[0]
+        if (pageError || !pageData) {
+          console.error('Page fetch error:', {
+            pageError,
+            pageData,
+            pageStatus,
+            pageStatusText,
           });
+          throw pageError ?? new Error('Page fetch failed');
+        }
 
-          // Update state with the fetched page data and pagination info
-          // No need for allDomains or domains state if filtering/pagination is server-side
-          // We directly set filteredDomains which is used for rendering the table
-          setFilteredDomains(typedPageData);
-          setTotalPages(calculatedTotalPages);
-          setResultInfo({
+        const typedPageData = (pageData as CloudflareDomain[]) || [];
+
+        /** --------------
+         * Update States
+         * -------------- */
+        setAllDomains(typedPageData);
+        setTotalPages(calculatedTotalPages);
+        setResultInfo({
             page: validPage,
             per_page: PAGE_SIZE,
             total_pages: calculatedTotalPages,
-            count: typedPageData.length, // Count of items on the current page
-            total_count: totalCount // Total count matching filters
-          });
-        } catch (error) {
-          console.error('Error loading domains:', error);
-          throw error;
-        }
-      }
+            count: typedPageData.length,
+            total_count: totalCount,
+        });
+
     } catch (error) {
-      console.error("Error loading domains:", error);
-      setIsError(true);
-      
-      if (!useMockData) {
-        toast.error("Error loading domain data. Try using sample data.");
-      }
+        console.error("Error loading domains:", error);
+        setIsError(true);
+        if (!useMockData) {
+            toast.error("Error loading domain data. Try using sample data.");
+        }
     } finally {
-      setIsLoading(false);
+        setIsLoading(false);
     }
-  }, [isAdmin, user?.email, searchQuery, statusFilter, currentPage, applyFilters]); // Added applyFilters dependency back
+}, [isAdmin, user?.email, searchQuery, statusFilter, currentPage, applyFilters]);
 
   // Load domains only when auth state (isAdmin and user.email for non-admins) is confirmed, or page changes
   useEffect(() => {
@@ -384,9 +381,31 @@ export default function DomainsPage() {
     load();
   
     return () => controller.abort();
-  }, [isAdmin, user?.email, loadDomains]); // Add loadDomains as dependency
+  }, [isAdmin, user?.email]);
+   // Make sure currentPage is a dependency
+   useEffect(() => {
+    if (!allDomains.length) return;
   
+    const filtered = applyFilters(allDomains);
   
+    const PAGE_SIZE = 25;
+    const calculatedTotalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+    const validPage = Math.min(Math.max(1, currentPage), calculatedTotalPages);
+  
+    const startIndex = (validPage - 1) * PAGE_SIZE;
+    const endIndex = startIndex + PAGE_SIZE;
+    const paginatedDomains = filtered.slice(startIndex, endIndex);
+  
+    setFilteredDomains(paginatedDomains);
+    setTotalPages(calculatedTotalPages);
+    setResultInfo({
+      page: validPage,
+      per_page: PAGE_SIZE,
+      total_pages: calculatedTotalPages,
+      count: paginatedDomains.length,
+      total_count: filtered.length,
+    });
+  }, [allDomains, searchQuery, statusFilter, currentPage]);
   
   // Mock users for assignment - in a real app this would come from an API
   const mockUsers = [
@@ -405,23 +424,18 @@ export default function DomainsPage() {
   // Load assigned users for domains
   const loadAssignedUsers = useCallback(async () => {
     try {
-      // Get domain assignments from domain_assignments table
       const { data: assignments } = await supabase
         .from('domain_assignments')
         .select('domain_id, user_email');
       
       if (assignments) {
         const assignmentMap: Record<string, string> = {};
+        const typedAssignments = assignments as DomainAssignment[];
         
-        // Process assignments with proper typing
-        const typedAssignments = (assignments as unknown) as DomainAssignment[];
         typedAssignments.forEach(assignment => {
-          // For admin view, show all assignments
           if (isAdmin) {
             assignmentMap[assignment.domain_id] = assignment.user_email;
-          }
-          // For user view, only show their own assignments
-          else if (assignment.user_email === user?.email) {
+          } else if (assignment.user_email === user?.email) {
             assignmentMap[assignment.domain_id] = assignment.user_email;
           }
         });
@@ -431,75 +445,56 @@ export default function DomainsPage() {
     } catch (error) {
       console.error('Error loading assigned users:', error);
     }
-  }, [isAdmin, user?.email]); // Remove unnecessary supabase dependency
-
-  // Load assigned users and setup realtime subscriptions
+  }, [isAdmin, user?.email]);
+  
   useEffect(() => {
     const controller = new AbortController();
-    // Initial load
-    loadAssignedUsers();
-
-    // Create a single channel for all subscriptions
+    
+    const load = async () => {
+      await loadAssignedUsers();
+    };
+    
+    load();
+  
     const channel = supabase.channel('realtime_changes');
     
     // Subscribe to domain assignments changes
     channel
-      .on(
-      'postgres_changes',
-      {
+      .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'domain_assignments',
-      },
-      async (payload: {
-        new: DomainAssignment;
-        old: DomainAssignment | null;
-        eventType: string;
-      }) => {
+      }, async (payload) => {
         const assignment = payload.new;
-        if (isAdmin || (user?.email && assignment?.user_email === user.email)) {
-        await loadAssignedUsers();
+        if (isAdmin || (user?.email && (assignment as DomainAssignment)?.user_email === user.email)) {
+          await loadAssignedUsers();
         }
-      }
-      )
+      })
       // Subscribe to domains changes
-      .on(
-      'postgres_changes',
-      {
+      .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'domains',
-      },
-      async (payload: {
-        new: CloudflareDomain;
-        old: CloudflareDomain | null;
-        eventType: string;
-      }) => {
+      }, async (payload) => {
         const domain = payload.new;
-        // Only reload if:
-        // 1. User is admin
-        // 2. Domain was created by user
-        // 3. Domain is assigned to user
-        if (
-        isAdmin ||
-        (user?.email &&
-          (domain?.created_by === user.email ||
-          (assignedUsers && domain?.id && assignedUsers[domain.id] === user.email)))
-        ) {
-        console.log('[Realtime] Domain change detected', payload); // Keep a simpler log
-        // Reload the current page on domain changes
-        console.log('[Realtime] Domain change detected, reloading current page data', payload);
-        await loadDomains({ useMockData: false, signal: controller.signal });
+        if (isAdmin ||
+            (user?.email &&
+             ((domain as CloudflareDomain)?.created_by === user.email ||
+              (assignedUsers && (domain as CloudflareDomain)?.id && assignedUsers[(domain as CloudflareDomain).id] === user.email)))) {
+          console.log('[Realtime] Domain change detected, reloading domain data');
+          if (!isLoading) {
+            await loadDomains({ useMockData: false, signal: controller.signal });
+          }
         }
-      }
-      )
+      })
       .subscribe();
-
+  
     return () => {
       controller.abort();
       channel.unsubscribe();
     };
-  }, [isAdmin, user?.email, loadDomains, loadAssignedUsers, assignedUsers]); // Add dependencies
+  }, [isAdmin, user?.email, loadAssignedUsers, isLoading]); // Don't depend on assignedUsers here
+   // Add dependencies
 
   // Handle dialog state
   const handleOpenChange = (open: boolean) => {

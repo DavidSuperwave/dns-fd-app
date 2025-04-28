@@ -4,7 +4,7 @@ import React, { useState } from "react"; // Removed unused useEffect
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { toast } from "sonner";
-import { supabase } from "../../lib/supabase-client";
+import { supabase } from "../../lib/supabase-browser";
 import { useRouter } from "next/navigation";
 
 export default function SetupPage() {

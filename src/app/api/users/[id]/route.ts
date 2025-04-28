@@ -8,9 +8,9 @@ export const dynamic = 'force-dynamic';
 // DELETE handler for deleting a user
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const userIdToDelete = params.id;
+  const userIdToDelete = (await params).id;
   const resolvedCookieStore = await cookies();
 
   // Create Supabase client for auth check
@@ -123,9 +123,9 @@ export async function DELETE(
 // PATCH handler for toggling user active status
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const userIdToUpdate = params.id;
+  const userIdToUpdate = (await params).id;
   const resolvedCookieStore = await cookies();
 
   // Create Supabase client for auth check

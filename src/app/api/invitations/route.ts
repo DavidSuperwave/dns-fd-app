@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin, supabaseServiceKey } from '../../../lib/supabase-client';
+import { supabaseAdmin } from '../../../lib/supabase-client';
 import { sendInvitationEmail } from '../../../lib/azure-email';
 
 // Azure Communication Services email client configuration
 // const connectionString = "endpoint=https://sw-01.unitedstates.communication.azure.com/;accesskey=AEukP4bAKqA7qviO1tDeVxTMhzkTpw5ciJl9IhZbFeVOE7OjV9UGJQQJ99AFACULyCpb8TiCAAAAAZCSHrmv"; // Store securely, not hardcoded
 const senderAddress = "desk@concierge.swbs.co";
-
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 type InvitationData = {
   email: string;
   role: 'admin' | 'user' | 'guest';
@@ -54,6 +54,13 @@ export async function POST(request: Request) {
 
     try {
       // Check if user already exists
+      if (!supabaseAdmin) {
+        console.error('[Invitation API] Supabase client is not initialized');
+        return NextResponse.json(
+          { success: false, error: 'Internal server error' },
+          { status: 500 }
+        );
+      }
       const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers();
       if ((existingUser.users as { email: string }[]).some(u => u.email === email)) {
         return NextResponse.json(

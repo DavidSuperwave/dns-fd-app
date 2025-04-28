@@ -11,9 +11,9 @@ export const dynamic = 'force-dynamic';
 // DELETE handler for deleting a domain
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const domainIdToDelete = params.id; // This is likely the Supabase UUID, not the domain name
+  const domainIdToDelete = (await params).id; // This is likely the Supabase UUID, not the domain name
   const resolvedCookieStore = await cookies();
 
   // Create Supabase client for auth check

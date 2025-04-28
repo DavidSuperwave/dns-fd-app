@@ -31,6 +31,11 @@ export async function GET(_request: NextRequest) {
     console.log(`[API Get All Users] Admin user authenticated: ${user.email}`);
 
     // 3. Fetch all profiles using the supabaseAdmin client (service role)
+    if (!supabaseAdmin) {
+      console.error('[API Get All Users] Supabase admin client is not initialized.');
+      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    }
+
     const { data: profilesData, error: profilesError } = await supabaseAdmin
       .from('user_profiles')
       .select('*')

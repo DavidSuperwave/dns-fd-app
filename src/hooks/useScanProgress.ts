@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../lib/supabase-client';
+import { supabase } from '../lib/supabase-browser';
 
 // Define the scan progress interface
 export interface ScanProgress {
@@ -114,19 +114,16 @@ export function useScanProgress() {
     const subscription = supabase
       .channel('scan_progress_changes')
       .on(
-        'postgres_changes',
+        'postgres_changes' as const,
         {
           event: '*',
           schema: 'public',
           table: 'scan_progress',
-          filter: "is_active=eq.true and status=neq.completed and status=neq.failed"
+          filter: 'is_active=eq.true and status=neq.completed and status=neq.failed',
         },
-        (payload: { eventType: string; new: ScanProgress }) => {
+        (payload) => {
           console.log('[ScanProgress Hook] Received update:', payload);
-          
-          console.log('[ScanProgress] Received subscription update:', payload);
-          
-          // For active scans, update immediately
+
           if (payload.eventType === 'INSERT') {
             console.log('[ScanProgress] New scan started:', payload.new);
             setActiveScan(payload.new as ScanProgress);
@@ -134,19 +131,19 @@ export function useScanProgress() {
             console.log('[ScanProgress] Scan updated:', payload.new);
             setActiveScan(payload.new as ScanProgress);
           }
-          
-          // Always fetch fresh data to catch any state changes
+
           fetchActiveScan();
         }
       )
       .subscribe();
-    
-    // Clean up subscription on unmount
+
+    // Cleanup function to unsubscribe
     return () => {
       console.log('[ScanProgress Hook] Cleaning up subscription');
       supabase.removeChannel(subscription);
     };
-  }, [fetchActiveScan, fetchScanHistory]); // Removed supabase dependency
+  }, [fetchActiveScan, fetchScanHistory]);
+ // Removed supabase dependency
   
   // Poll every second during active scans, otherwise every 5 seconds
   const pollInterval = activeScan?.is_active && !['completed', 'failed'].includes(activeScan.status || '')
@@ -161,7 +158,9 @@ export function useScanProgress() {
       fetchActiveScan();
     }, pollInterval);
     
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+    };
   }, [pollInterval, fetchActiveScan]);
 
   // Update history when scan completes

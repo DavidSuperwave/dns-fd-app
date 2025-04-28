@@ -30,6 +30,14 @@ export async function POST(request: NextRequest) {
       console.log(`Type of domain_id received: ${typeof domain_id}, Value: ${domain_id}`);
 
       // Verify user_email exists in user_profiles
+      if (!supabaseAdmin) {
+        console.error('Supabase client is not initialized.');
+        return NextResponse.json(
+          { success: false, error: 'Internal server error: Supabase client is not initialized.' },
+          { status: 500 }
+        );
+      }
+
       const { data: userProfile, error: userCheckError } = await supabaseAdmin
         .from('user_profiles')
         .select('id')

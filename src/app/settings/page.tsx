@@ -14,7 +14,8 @@ import { Label } from "../../components/ui/label";
 import { toast } from "sonner";
 import DashboardLayout from "../../components/layout/dashboard-layout";
 import { QRCodeSVG } from 'qrcode.react';
-import { supabase, generateSecurePassword } from "../../lib/supabase-client";
+import { generateSecurePassword } from "../../lib/supabase-client";
+import { supabase } from "../../lib/supabase-browser";
 
 export default function SettingsPage() {
   // User profile settings

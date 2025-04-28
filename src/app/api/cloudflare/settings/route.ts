@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '../../../../lib/supabase-client';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
 // Save Cloudflare API settings
 export async function POST(request: Request) {
   try {
+    const cookieStore = cookies();
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
     // Verify user is authenticated and has admin role
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) {
@@ -103,6 +106,8 @@ export async function POST(request: Request) {
 // Get current Cloudflare API settings
 export async function GET() { // Remove unused 'request' parameter
   try {
+    const cookieStore = cookies();
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
     // Verify user is authenticated and has admin role
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) {

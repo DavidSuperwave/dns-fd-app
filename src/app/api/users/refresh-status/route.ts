@@ -72,6 +72,10 @@ export async function POST(request: NextRequest) {
     console.log(`[API Refresh Status] Admin ${requestingUser.email} attempting to refresh status for user ID: ${userId}`);
 
     // 3. Fetch user details from Supabase Auth using admin client
+    if (!supabaseAdmin) {
+      console.error('[API Refresh Status] Supabase admin client is null.');
+      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    }
     const { data: authUserData, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(userId);
 
     if (authUserError) {
