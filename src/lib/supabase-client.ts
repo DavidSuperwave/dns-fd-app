@@ -3,47 +3,30 @@ import { createClient as createStandardClient } from '@supabase/supabase-js'; //
 // Remove unused cookies import here, it's used in layout.tsx
 import type { ReadonlyRequestCookies } from 'next/dist/server/web/spec-extension/adapters/request-cookies'; // Import type for cookies()
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zfwaqmkqqykfptczwqwo.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpmd2FxbWtxcXlrZnB0Y3p3cXdvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ0MTI0NDYsImV4cCI6MjA2MDk4ODQ0Nn0.AeIJxk2iVYQkyccemWcw-FSTI3g-wIoJMrZ9N8RJDi4';
-export const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpmd2FxbWtxcXlrZnB0Y3p3cXdvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NTQxMjQ0NiwiZXhwIjoyMDYwOTg4NDQ2fQ._b4muH3igc6CwPxTp7uPM54FWSCZkK1maSSbF7dAlQM';
+// Ensure these environment variables are set!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+export const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Add checks to ensure variables are loaded
+if (!supabaseUrl) {
+  throw new Error("Missing environment variable: NEXT_PUBLIC_SUPABASE_URL");
+}
+if (!supabaseAnonKey) {
+  throw new Error("Missing environment variable: NEXT_PUBLIC_SUPABASE_ANON_KEY");
+}
+if (!supabaseServiceKey) {
+  // Throw error as the admin client requires the service key
+  throw new Error("Missing environment variable: SUPABASE_SERVICE_ROLE_KEY");
+}
+
 
 // --- Client Creation Functions ---
 
 // Function to create a client for use in Client Components
 export const createClient = () => createBrowserClient(supabaseUrl, supabaseAnonKey);
 
-// Function to create a client for use in Server Components, Route Handlers, Server Actions
-// Takes the cookies() store from next/headers
-// Revert createServerClientWrapper to accept cookieStore and define handlers
-export const createServerClientWrapper = (cookieStore: ReadonlyRequestCookies) => {
-  return createServerClient(
-    supabaseUrl,
-    supabaseAnonKey,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          try {
-            cookieStore.set(name, value, options);
-          } catch (error) {
-             console.warn(`[createServerClientWrapper] Ignored error setting cookie '${name}' in Server Component:`, error);
-          }
-        },
-        remove(name: string, options: CookieOptions) {
-          try {
-            cookieStore.set(name, '', options); // Use set with empty value for removal
-          } catch (error) {
-             console.warn(`[createServerClientWrapper] Ignored error removing cookie '${name}' in Server Component:`, error);
-          }
-        },
-      },
-    }
-  );
-};
-
-
+// createServerClientWrapper removed as client is now created directly in RootLayout
 // --- Admin Client (Singleton - OK as it uses service key) ---
 let supabaseAdminInstance: ReturnType<typeof createStandardClient> | null = null;
 
@@ -202,9 +185,9 @@ export interface Domain {
   user_id?: string; // ID of the user this domain is assigned to
 }
 
-// Fetch all users from Supabase (Restored Original Logic)
-// Accepts a Supabase client instance (server or browser)
-export async function fetchUsers(client: ReturnType<typeof createClient> | ReturnType<typeof createServerClientWrapper>): Promise<UserProfile[]> {
+// Fetch all users from Supabase
+// Accepts a Supabase browser client instance
+export async function fetchUsers(client: ReturnType<typeof createClient>): Promise<UserProfile[]> {
   try {
     console.log('fetchUsers: Starting...');
 
@@ -212,13 +195,19 @@ export async function fetchUsers(client: ReturnType<typeof createClient> | Retur
     const { data: { user } } = await client.auth.getUser();
     console.log('fetchUsers: Current user:', user?.email);
 
-    // Check if user is admin
-    const isAdmin = user?.email === 'management@superwave.ai' ||
-                   user?.user_metadata?.role === 'admin';
+    // If no user is logged in, return empty array immediately
+    if (!user) {
+      console.warn('fetchUsers: No authenticated user found. Returning empty list.');
+      return [];
+    }
+
+    // Check if user is admin (no need for ?. now user is guaranteed)
+    const isAdmin = user.email === 'management@superwave.ai' ||
+                   user.user_metadata?.role === 'admin';
     console.log('fetchUsers: Is admin?', isAdmin);
 
-    // If not admin, only show own profile
-    if (!isAdmin && user) {
+    // If not admin, only show own profile (no need for && user now)
+    if (!isAdmin) {
       const { data: ownProfile, error: profileError } = await supabaseAdmin
         .from('user_profiles')
         .select('*')
@@ -484,7 +473,7 @@ export async function removeDomainFromUser(userId: string, domainId: string): Pr
 // Accepts a Supabase client instance (server or browser)
 export async function deleteDomainAndAssignments(
   domainId: string,
-  client: ReturnType<typeof createClient> | ReturnType<typeof createServerClientWrapper>
+  client: ReturnType<typeof createClient> // Use browser client type
 ): Promise<boolean> {
   // First, delete the domain from Cloudflare
   try {
