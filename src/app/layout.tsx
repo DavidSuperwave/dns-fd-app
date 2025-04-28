@@ -65,7 +65,7 @@ export default async function RootLayout({ // Make layout async
   // Pass the initial session to the AuthProvider
   return (
     <html lang="en">
-      <body>
+      <body suppressHydrationWarning={true}> {/* Add suppressHydrationWarning */}
         <AuthProvider initialSession={session}>
           {children}
         </AuthProvider>

@@ -15,7 +15,8 @@ import {
 } from "../../components/ui/table";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
-import { supabase } from "../../lib/supabase-browser";
+// Keep the stashed version for client component
+import { createClient } from "../../lib/supabase-client"; // Correct import
 import { toast } from "sonner";
 import { useAuth } from "../../components/auth/auth-provider";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
@@ -40,7 +41,8 @@ export default function CronMonitorPage() {
   const [nextScheduledTime, setNextScheduledTime] = useState<Date | null>(null);
   const [tablesExist, setTablesExist] = useState<boolean | null>(null);
 
-  // Setup Supabase client
+  // Create Supabase client instance
+  const supabase = createClient();
 
   // Calculate the next scheduled sync time (top of the next hour)
   useEffect(() => {
@@ -203,7 +205,7 @@ export default function CronMonitorPage() {
 
   // Initiate Vercel cron simulator
   // Memoize fetchSyncHistory to use with useInterval
-  const fetchSyncHistoryCallback = useCallback(fetchSyncHistory, [fetchSyncHistory, supabase]); // Add supabase dependency
+  const fetchSyncHistoryCallback = useCallback(fetchSyncHistory, [fetchSyncHistory]); // Removed supabase dependency
 
   // Auto-refresh every 5 seconds while a sync is in progress
   useInterval(
@@ -339,7 +341,7 @@ export default function CronMonitorPage() {
     };
 
     checkForActiveScan();
-  }, [fetchSyncHistory, setIsTriggeringSync]); // Removed supabase dependency, added setIsTriggeringSync
+  }, [fetchSyncHistory, setIsTriggeringSync]); // Removed supabase dependency
 
   // Stop auto-refresh when no running scans are found
   useEffect(() => {

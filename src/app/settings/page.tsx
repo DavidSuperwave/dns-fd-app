@@ -14,15 +14,18 @@ import { Label } from "../../components/ui/label";
 import { toast } from "sonner";
 import DashboardLayout from "../../components/layout/dashboard-layout";
 import { QRCodeSVG } from 'qrcode.react';
-import { generateSecurePassword } from "../../lib/supabase-client";
-import { supabase } from "../../lib/supabase-browser";
+// Keep the stashed version for client component
+import { createClient, generateSecurePassword } from "../../lib/supabase-client"; // Correct import
 
 export default function SettingsPage() {
   // User profile settings
   const [userEmail, setUserEmail] = useState<string>("management@superwave.ai");
   // Removed unused userRole state
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
-  
+
+  // Create Supabase client instance
+  const supabase = createClient();
+
   // Security settings
   const [securitySettings, setSecuritySettings] = useState({
     twoFactorEnabled: false,

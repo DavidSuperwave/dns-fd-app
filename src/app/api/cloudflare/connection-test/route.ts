@@ -1,12 +1,53 @@
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+  // Keep the ssr version for App Router
+  import { createServerClient, type CookieOptions } from '@supabase/ssr';
+  import { cookies } from 'next/headers';
 
-// Test connection to Cloudflare API with provided credentials
+  // Test connection to Cloudflare API with provided credentials
 export async function POST(request: Request) {
   try {
-    const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+    // Keep the ssr version for App Router
+    // Create a Supabase client configured for server-side Route Handler
+    const resolvedCookieStore = await cookies(); // Call await cookies() once here
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) { // Remove async
+            try {
+              // Use the resolved store
+              return resolvedCookieStore.get(name)?.value;
+            } catch (error) {
+               console.error(`Error getting cookie "${name}":`, error);
+               return undefined; // Return undefined on error
+            }
+          },
+          set(name: string, value: string, options: CookieOptions) { // Remove async
+            try {
+              // Use the resolved store
+              resolvedCookieStore.set({ name, value, ...options });
+            } catch (error) {
+              // The `set` method was called from a Server Component.
+              // This can be ignored if you have middleware refreshing
+              // user sessions.
+              console.warn(`createServerClient set cookie error (ignorable if middleware exists): ${error}`);
+            }
+          },
+          remove(name: string, options: CookieOptions) { // Remove async
+            try {
+              // Use the resolved store
+              resolvedCookieStore.set({ name, value: '', ...options });
+            } catch (error) {
+              // The `delete` method was called from a Server Component.
+              // This can be ignored if you have middleware refreshing
+              // user sessions.
+              console.warn(`createServerClient remove cookie error (ignorable if middleware exists): ${error}`);
+            }
+          },
+        },
+      }
+    );
     // Verify user is authenticated and has admin role
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) {

@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../lib/supabase-browser';
+  // Keep stashed version for client hook
+  import { createClient } from '../lib/supabase-client'; // Correct import
+  import { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'; // Import types
 
-// Define the scan progress interface
+  // Define the scan progress interface
 export interface ScanProgress {
   id: number;
   scan_id: string;
@@ -23,9 +25,10 @@ export function useScanProgress() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastScans, setLastScans] = useState<ScanProgress[]>([]);
-  
-  // Memoize Supabase client
-  
+
+  // Create Supabase client instance
+  const supabase = createClient();
+
   // Function to fetch the active scan
   const fetchActiveScan = useCallback(async () => {
     console.log('[ScanProgress] Fetching active scan...');
@@ -68,8 +71,8 @@ export function useScanProgress() {
       console.error('Exception in fetchActiveScan:', err);
       setError('Failed to fetch active scan data');
     }
-  }, []); // Removed supabase dependency
-  
+  }, [supabase]); // Add supabase dependency
+
   // Function to fetch recent scan history
   const fetchScanHistory = useCallback(async () => {
     try {
@@ -95,8 +98,8 @@ export function useScanProgress() {
       setError('Failed to fetch scan history');
       setIsLoading(false);
     }
-  }, []); // Removed supabase dependency
-  
+  }, [supabase]); // Add supabase dependency
+
   // Set up Supabase real-time subscription for scan progress updates
   useEffect(() => {
     console.log('[ScanProgress Hook] Setting up Supabase subscription');
@@ -111,40 +114,76 @@ export function useScanProgress() {
     loadInitialData();
     
     // Subscribe to changes in the scan_progress table
-    const subscription = supabase
-      .channel('scan_progress_changes')
-      .on(
-        'postgres_changes' as const,
+    // Keep stashed version (better typing)
+    // Explicitly type the channel and payload
+    const channel: RealtimeChannel = supabase.channel('scan_progress_changes');
+
+    channel.on<RealtimePostgresChangesPayload<ScanProgress>>(
+        'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'scan_progress',
           filter: 'is_active=eq.true and status=neq.completed and status=neq.failed',
         },
-        (payload) => {
+        // Keep stashed version (more robust handling)
+        (payload) => { // Payload is now correctly typed
           console.log('[ScanProgress Hook] Received update:', payload);
 
-          if (payload.eventType === 'INSERT') {
-            console.log('[ScanProgress] New scan started:', payload.new);
-            setActiveScan(payload.new as ScanProgress);
-          } else if (payload.eventType === 'UPDATE') {
-            console.log('[ScanProgress] Scan updated:', payload.new);
-            setActiveScan(payload.new as ScanProgress);
+          // Handle different event types
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            console.log(`[ScanProgress] ${payload.eventType} received:`, payload.new);
+            // Runtime check to ensure payload.new resembles ScanProgress before setting state
+            const newScanData = payload.new;
+            if (
+              newScanData &&
+              typeof newScanData === 'object' &&
+              'id' in newScanData &&
+              'scan_id' in newScanData &&
+              'status' in newScanData &&
+              'is_active' in newScanData // Add other essential checks as needed
+            ) {
+              // Now TypeScript should be more confident, or the cast is safer
+              // Use 'as unknown as ScanProgress' to bypass strict type overlap check
+              setActiveScan(newScanData as unknown as ScanProgress);
+            } else {
+              console.warn('[ScanProgress] Received payload.new does not match expected ScanProgress structure:', newScanData);
+              // Fetch fresh data as a fallback
+              fetchActiveScan();
+            }
+          } else if (payload.eventType === 'DELETE') {
+            console.log('[ScanProgress] DELETE received:', payload.old);
+            // If the deleted record was the active one, fetch again to find the new active/latest
+            // This check might need refinement based on how deletes affect active status
+            if (activeScan && payload.old && 'id' in payload.old && payload.old.id === activeScan.id) {
+                 console.log('[ScanProgress] Active scan record deleted, fetching latest state.');
+                 fetchActiveScan();
+            } else {
+                 // Optionally update history if a non-active scan was deleted
+                 fetchScanHistory();
+            }
           }
-
-          fetchActiveScan();
+          // No 'else' needed as INSERT, UPDATE, DELETE cover the defined payload types
         }
       )
-      .subscribe();
+      .subscribe((status, err) => { // Add subscribe callback for error handling
+        if (err) {
+          console.error('[ScanProgress Hook] Subscription error:', err);
+          setError(`Subscription failed: ${err.message}`);
+        } else {
+          console.log('[ScanProgress Hook] Subscription status:', status);
+        }
+      });
 
-    // Cleanup function to unsubscribe
+
+    // Clean up subscription on unmount
     return () => {
       console.log('[ScanProgress Hook] Cleaning up subscription');
-      supabase.removeChannel(subscription);
+      supabase.removeChannel(channel); // Use the typed channel variable
     };
-  }, [fetchActiveScan, fetchScanHistory]);
- // Removed supabase dependency
-  
+  // Keep stashed version (includes supabase dependency)
+  }, [fetchActiveScan, fetchScanHistory, supabase]); // Dependencies remain the same
+
   // Poll every second during active scans, otherwise every 5 seconds
   const pollInterval = activeScan?.is_active && !['completed', 'failed'].includes(activeScan.status || '')
     ? 1000

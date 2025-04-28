@@ -246,16 +246,29 @@ export default function DomainsPage() {
                 .eq('user_email', user.email)
                 .abortSignal(signal ?? new AbortController().signal);
 
-            if (assignmentError || !assignments?.length) {
-                console.log(`No domains assigned to user ${user.email}`);
+            // Add a more robust check for null/undefined assignments
+            if (assignmentError) {
+                console.error(`Error fetching domain assignments for ${user.email}:`, assignmentError);
+                // Handle error appropriately - maybe show an error state or return empty
                 setAllDomains([]);
                 setDomains([]);
                 setFilteredDomains([]);
                 setResultInfo(null);
                 setTotalPages(1);
-                return;
+                return; // Stop execution if assignments couldn't be fetched
             }
 
+            if (!assignments || assignments.length === 0) {
+                 console.log(`No domains assigned to user ${user.email} or assignments array is null/empty.`);
+                 setAllDomains([]);
+                 setDomains([]);
+                 setFilteredDomains([]);
+                 setResultInfo(null);
+                 setTotalPages(1);
+                 return; // Stop if no assignments found
+            }
+
+            // Now it's safe to map over assignments
             const assignedDomainIds = assignments.map(a => a.domain_id);
 
             countQuery.in('id', assignedDomainIds);

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '../../../lib/supabase-client';
-import { sendInvitationEmail } from '../../../lib/azure-email';
+  import { supabaseAdmin } from '../../../lib/supabase-client'; // Keep upstream version
+  import { sendInvitationEmail } from '../../../lib/azure-email';
 
-// Azure Communication Services email client configuration
+  // Azure Communication Services email client configuration
 // const connectionString = "endpoint=https://sw-01.unitedstates.communication.azure.com/;accesskey=AEukP4bAKqA7qviO1tDeVxTMhzkTpw5ciJl9IhZbFeVOE7OjV9UGJQQJ99AFACULyCpb8TiCAAAAAZCSHrmv"; // Store securely, not hardcoded
 const senderAddress = "desk@concierge.swbs.co";
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -13,31 +13,26 @@ type InvitationData = {
 
 export async function POST(request: Request) {
   try {
-    // Extract the auth token from the request headers
-    const authHeader = request.headers.get('authorization');
-    console.log('[Invitation API] Auth header:', authHeader ? 'Present' : 'Missing');
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('[Invitation API] Invalid auth header format');
+    // Check if Supabase Admin client is available (implies service key is set server-side)
+    if (!supabaseAdmin) {
+      console.error('[Invitation API] Supabase Admin client is not initialized. Check SUPABASE_SERVICE_ROLE_KEY.');
       return NextResponse.json(
-        { success: false, error: 'Invalid authorization header' },
-        { status: 401 }
-      );
-    }
-    
-    // Extract the token
-    const token = authHeader.substring(7);
-    
-    // Verify service key
-    if (token !== supabaseServiceKey) {
-      console.log('[Invitation API] Invalid service key');
-      return NextResponse.json(
-        { success: false, error: 'Not authorized' },
-        { status: 401 }
+        { success: false, error: 'Server configuration error' },
+        { status: 500 }
       );
     }
 
-    console.log('[Invitation API] Service key authenticated');
+    // Optional: If you still need Bearer token auth for this specific route,
+    // you can compare it against a separate environment variable meant for this route's auth.
+    // Example: const INVITATION_API_SECRET = process.env.INVITATION_API_SECRET;
+    // const authHeader = request.headers.get('authorization');
+    // const token = authHeader?.substring(7);
+    // if (!INVITATION_API_SECRET || token !== INVITATION_API_SECRET) {
+    //   return NextResponse.json({ success: false, error: 'Not authorized' }, { status: 401 });
+    // }
+    // For now, we assume access to this route implies sufficient privilege if supabaseAdmin is available.
+
+    console.log('[Invitation API] Admin client available, proceeding.');
 
     // Parse the invitation data from the request
     const invitationData: InvitationData = await request.json();

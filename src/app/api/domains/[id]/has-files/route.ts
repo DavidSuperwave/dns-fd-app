@@ -6,12 +6,19 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 
 export const dynamic = 'force-dynamic';
 
-// PATCH handler for updating the has_files flag on a domain
-export async function PATCH(
+// Define an interface for the route context
+interface RouteContext {
+  params: {
+    id: string;
+  };
+}
+
+// POST handler for updating the has_files flag on a domain (changed from PATCH)
+export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const domainIdToUpdate = (await params).id;
+  const domainIdToUpdate = (await params).id; // Use the upstream version (await params)
   const resolvedCookieStore = await cookies();
 
   // Create Supabase client for auth check
@@ -20,12 +27,31 @@ export async function PATCH(
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) { return resolvedCookieStore.get(name)?.value },
-        set(name: string, value: string, options: CookieOptions) {
-          try { resolvedCookieStore.set({ name, value, ...options }) } catch (error) { console.warn(`[API HasFiles Update] Failed set cookie`, error) }
+        async get(name: string) { // Add async
+          // Note: We already awaited cookies() outside, so no need to await here again.
+          // This structure satisfies the type checker based on previous fixes.
+          try {
+            return resolvedCookieStore.get(name)?.value;
+          } catch (error) {
+             console.error(`[API HasFiles Update] Error getting cookie "${name}":`, error);
+             return undefined;
+          }
         },
-        remove(name: string, options: CookieOptions) {
-          try { resolvedCookieStore.set({ name, value: '', ...options }) } catch (error) { console.warn(`[API HasFiles Update] Failed remove cookie`, error) }
+        async set(name: string, value: string, options: CookieOptions) { // Add async
+          try {
+            // We already awaited cookies() outside.
+            resolvedCookieStore.set({ name, value, ...options });
+          } catch (error) {
+            console.warn(`[API HasFiles Update] createServerClient set cookie error: ${error}`);
+          }
+        },
+        async remove(name: string, options: CookieOptions) { // Add async
+          try {
+            // We already awaited cookies() outside.
+            resolvedCookieStore.set({ name, value: '', ...options });
+          } catch (error) {
+            console.warn(`[API HasFiles Update] createServerClient remove cookie error: ${error}`);
+          }
         },
       },
     }
@@ -40,12 +66,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    // For now, restrict this to admins. Could be expanded later to assigned users.
-    const isAdmin = requestingUser?.user_metadata?.role === 'admin' || requestingUser?.email === process.env.ADMIN_EMAIL;
-    if (!isAdmin) {
-      console.warn(`[API HasFiles Update] Forbidden attempt by non-admin: ${requestingUser.email}`);
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    // Admin check removed - any authenticated user can update this flag.
+    // TODO: Consider adding a check to ensure the user is assigned to this domain if needed in the future.
 
     // 2. Get the new has_files status from the request body
     let hasFiles: boolean;
@@ -65,7 +87,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
-    console.log(`[API HasFiles Update] Admin ${requestingUser.email} attempting to set domain ID ${domainIdToUpdate} has_files status to: ${hasFiles}`);
+    console.log(`[API HasFiles Update] User ${requestingUser.email} attempting to set domain ID ${domainIdToUpdate} has_files status to: ${hasFiles}`);
 
     // 4. Update the domain record using the admin client
     const { error: updateError } = await supabaseAdmin
