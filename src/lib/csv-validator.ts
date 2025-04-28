@@ -24,8 +24,8 @@ function containsNonEnglishCharacters(text: string): boolean {
 
 function validateEmailPrefix(email: string): string | null {
   const [prefix] = email.split('@');
-  if (prefix.includes('..')) return "contains two consecutive dots in the prefix";
-  if (prefix.endsWith('.')) return "contains a dot immediately before the @ sign";
+  if (prefix.includes('..')) return "Email name (before @) cannot contain two consecutive dots (..)";
+  if (prefix.endsWith('.')) return "Email name (before @) cannot end with a dot (.)";
   return null;
 }
 
@@ -35,16 +35,17 @@ function validateEmail(email: string): [string | null, string | null] {
 
   const pattern = /^(?<local>[^@]+)@(?<domain>[^@]+)$/;
   const match = email.match(pattern);
-  if (!match) return ["does not match basic email structure", null];
-  
+  if (!match) return ["Invalid email format (missing @ or domain)", null];
+
   const { local, domain } = match.groups!;
-  if (!/^[a-zA-Z0-9.+_-]+$/.test(local)) return ["contains invalid characters in local part", null];
-  if ("._-".includes(local[0])) return ["starts with a prohibited symbol", null];
-  if (local.includes('+')) return ["local part contains prohibited symbol '+'", null];
-  
+  // Simplified check - focus on common invalid chars like spaces, commas, etc.
+  if (/[^a-zA-Z0-9.+_-]/.test(local)) return ["Email name (before @) contains invalid characters", null];
+  if ("._-".includes(local[0])) return ["Email name (before @) cannot start with '.', '_', or '-'", null];
+  if (local.includes('+')) return ["Email name (before @) cannot contain the '+' symbol", null];
+
   const domainParts = domain.split('.');
-  if (domainParts.length < 2) return ["missing domain TLD", null];
-  
+  if (domainParts.length < 2 || domainParts.some(part => part.length === 0)) return ["Email domain is incomplete or invalid (e.g., missing .com or has ..)", null];
+
   return [null, domain];
 }
 
@@ -81,7 +82,7 @@ export async function validateCsvContent(content: string): Promise<ValidationRes
   try {
     const cleaned = cleanCsv(content);
     if (!cleaned) {
-      errors.push("CSV is empty after cleaning");
+      errors.push("CSV file appears empty or contains no valid data.");
       return { errors, repeatedEmails: [], hasErrors: true };
     }
 
@@ -111,10 +112,14 @@ export async function validateCsvContent(content: string): Promise<ValidationRes
       lineNumber++;
       const lineNumberInFile = lineNumber + 1; // Headers are on line 1, data starts at line 2
 
-      if (Object.values(row).some(value => containsNonEnglishCharacters(value as string))) {
-        nonEnglishDetected = true;
-        errors.push(`Non-English characters detected (Line: ${lineNumberInFile})`);
-        break;
+      // Check for non-English characters specifically in DisplayName and EmailAddress
+      const displayName = row.DisplayName || '';
+      const emailAddress = row.EmailAddress || '';
+      if (containsNonEnglishCharacters(displayName) || containsNonEnglishCharacters(emailAddress)) {
+        nonEnglishDetected = true; // Keep flag for hasErrors calculation
+        // Add more specific error message
+        errors.push(`Invalid characters found. Please use only standard English letters, numbers, and symbols. (Check Line: ${lineNumberInFile})`);
+        // Don't break immediately, continue checking other rows for more errors
       }
 
       const email = row.EmailAddress.trim().toLowerCase();
@@ -127,25 +132,31 @@ export async function validateCsvContent(content: string): Promise<ValidationRes
         emailLines[email] = lineNumberInFile;
       }
 
-      const [errorMessage, domain] = validateEmail(email);
-      if (errorMessage) {
-        errors.push(`${email}: ${errorMessage} (Line: ${lineNumberInFile})`);
+      const [emailValidationError, domain] = validateEmail(email);
+      if (emailValidationError) {
+        // Add the specific email and the improved error message
+        errors.push(`"${email}": ${emailValidationError} (Check Line: ${lineNumberInFile})`);
       }
       if (domain) domainSet.add(domain);
     }
 
     if (domainSet.size > 1) {
-      errors.push("Multiple domains detected in email addresses");
+      errors.push("All emails in the file must belong to the same domain (e.g., all '@company.com'). Found multiple domains.");
     }
 
+    // Filter out duplicate non-English error messages if present
+    const uniqueErrors = [...new Set(errors)];
+
     return {
-      errors,
+      errors: uniqueErrors, // Use unique errors
+      // Removed duplicate 'errors' property
       repeatedEmails: repeatedEmailsWithLines,
-      hasErrors: errors.length > 0 || nonEnglishDetected
+      hasErrors: uniqueErrors.length > 0 || nonEnglishDetected || repeatedEmailsWithLines.length > 0 // Check length of uniqueErrors
     };
   } catch (e) {
+    console.error("CSV Validation Error:", e); // Log the actual error for debugging
     return {
-      errors: [`Failed to validate CSV: ${e instanceof Error ? e.message : String(e)}`],
+      errors: [`An unexpected error occurred while reading the CSV file. Please check the file format.`],
       repeatedEmails: [],
       hasErrors: true
     };

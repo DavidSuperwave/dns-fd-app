@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { supabase, supabaseAdmin } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase-client'; // Removed unused 'supabase' import
 import { toast } from 'sonner';
 import { FileIcon, Loader2, Download } from 'lucide-react';
 import { validateCsvContent } from '@/lib/csv-validator';
@@ -143,6 +143,7 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
     setIsUploading(true);
     console.log('[handleFileChange] Set isUploading=true'); // Log 3
 
+    let validationFailed = false; // Flag to track if validation failed in this run
     try {
       // Read and validate file content
       console.log('[handleFileChange] Reading file content...'); // Log 4
@@ -152,6 +153,7 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       console.log('[handleFileChange] Validation result:', validation); // Log 6
 
       if (validation.hasErrors) {
+        validationFailed = true; // Set the flag
         console.log('[handleFileChange] Validation failed. Showing dialog.'); // Log 7a
         setValidationErrors(validation);
         setShowValidationDialog(true);
@@ -211,16 +213,16 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       console.log('[handleFileChange] Entering finally block.'); // Log 16 (Always runs)
       setIsUploading(false);
       console.log('[handleFileChange] Set isUploading=false in finally.'); // Log 17 (Always runs)
-      // Reset validation state only if it wasn't set due to errors
-      if (!validationErrors && showValidationDialog) {
-         // If validation dialog was shown due to error, don't reset here
-         // It will be reset when the dialog is closed by the user
-         console.log('[handleFileChange] Skipping validation reset in finally (dialog shown).'); // Log 18a
+      // Reset validation state ONLY if validation did NOT fail during this run.
+      // If validation failed, the dialog's onClose handler will reset state.
+      if (!validationFailed) {
+        setValidationErrors(null);
+        setShowValidationDialog(false);
+        console.log('[handleFileChange] Reset validation state in finally (validation passed).');
       } else {
-         setValidationErrors(null);
-         setShowValidationDialog(false);
-         console.log('[handleFileChange] Reset validation state in finally.'); // Log 18b
+        console.log('[handleFileChange] Skipping validation reset in finally (validation failed, dialog should show).');
       }
+
       // Clear the file input value so the same file can be selected again if needed
       if (e.target) {
         e.target.value = '';
