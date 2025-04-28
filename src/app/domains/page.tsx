@@ -281,124 +281,63 @@ export default function DomainsPage() {
             userEmail: user?.email
           });
 
-          // First get count of matching records
+          // Define page size
+          const PAGE_SIZE = 25;
+
+          // First get count of matching records based on filters
           const { count, error: countError } = await queryBase.abortSignal(signal);
-          
+
           if (countError) {
             console.error('Count query error:', countError);
             throw countError;
           }
-          
+
           const totalCount = count || 0;
-          console.log(`Total matching records: ${totalCount}`);
-
-          // Fetch all data in chunks
-          const PAGE_SIZE = 1000; // Supabase's maximum
-          const allData: CloudflareDomain[] = [];
-          const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-          
-          for (let page = 0; page < totalPages; page++) {
-            const from = page * PAGE_SIZE;
-            const to = from + PAGE_SIZE - 1;
-            
-            console.log(`Fetching page ${page + 1}/${totalPages} (rows ${from}-${to})`);
-            
-            const { data: pageData, error: pageError } = await queryBase
-              .range(from, to)
-              .abortSignal(signal);
-              
-            if (pageError) {
-              console.error(`Error fetching page ${page + 1}:`, pageError);
-              throw pageError;
-            }
-            
-            if (pageData && pageData.length > 0) {
-              // Double cast to safely convert the data
-              const typedPageData = (pageData as unknown) as CloudflareDomain[];
-              allData.push(...typedPageData);
-              console.log(`Added ${pageData.length} records, total: ${allData.length}`);
-            }
-          }
-          
-          // Use the complete combined dataset
-          const data = allData;
-          const error = null;
-
-          if (error) {
-            console.error('Query error:', error);
-            throw error;
-          }
-          if (!data) {
-            console.error('No data returned');
-            throw new Error('No data returned from query');
-          }
-
-          console.log('Query results:', {
-            count: data.length,
-            hasData: data.length > 0,
-            firstItem: data[0]
-          });
-
-          // Reset to page 1 if current page is invalid
-          if (currentPage > Math.ceil(totalCount / 25)) {
-            console.log('Resetting to page 1 - current page out of bounds');
-            setCurrentPage(1);
-          }
-
-          if (data.length === 0) {
-            setAllDomains([]);
-            setDomains([]);
-            setFilteredDomains([]);
-            setTotalPages(1);
-            setResultInfo({
-              page: 1,
-              per_page: 25,
-              total_pages: 1,
-              count: 0,
-              total_count: 0
-            });
-            return;
-          }
-
-          // Store the full dataset and calculate pagination
-          const fullData = data || [];
-          console.log('Full data:', fullData.length);
-
-          // Calculate total pages from full dataset
-          const calculatedPages = Math.ceil(totalCount / 25);
-          console.log('Total pages:', calculatedPages);
+          const calculatedTotalPages = Math.ceil(totalCount / PAGE_SIZE) || 1; // Ensure at least 1 page
+          console.log(`Total matching records: ${totalCount}, Total Pages: ${calculatedTotalPages}`);
 
           // Ensure current page is valid
-          const validPage = Math.min(Math.max(1, currentPage), calculatedPages);
+          const validPage = Math.min(Math.max(1, currentPage), calculatedTotalPages);
           if (validPage !== currentPage) {
-            console.log('Adjusting current page:', currentPage, '->', validPage);
-            setCurrentPage(validPage);
+            console.log(`Adjusting current page from ${currentPage} to ${validPage}`);
+            // Update state immediately if needed, or let the final state update handle it
+             setCurrentPage(validPage); // Update state here
           }
 
-          // Apply filters to full dataset first
-          const filteredResults = applyFilters(fullData);
-          
-          // Calculate pagination based on filtered results
-          const totalFilteredPages = Math.ceil(filteredResults.length / 25);
-          const validFilteredPage = Math.min(Math.max(1, currentPage), totalFilteredPages);
-          
-          // Get page slice from filtered results
-          const startIndex = (validFilteredPage - 1) * 25;
-          const endIndex = Math.min(startIndex + 25, filteredResults.length);
-          const currentPageSlice = filteredResults.slice(startIndex, endIndex);
-          console.log('Page data:', startIndex, '-', endIndex, '=', currentPageSlice.length);
-          
-          // Update all state in order
-          setAllDomains(fullData);
-          setDomains(filteredResults);
-          setFilteredDomains(currentPageSlice);
-          setTotalPages(totalFilteredPages);
+          // Calculate range for the current valid page
+          const startIndex = (validPage - 1) * PAGE_SIZE;
+          const endIndex = startIndex + PAGE_SIZE - 1;
+          console.log(`Fetching page ${validPage}/${calculatedTotalPages} (rows ${startIndex}-${endIndex})`);
+
+          // Fetch only the data for the current page
+          const { data: pageData, error: pageError } = await queryBase
+            .range(startIndex, endIndex)
+            .abortSignal(signal);
+
+          if (pageError) {
+            console.error(`Error fetching page ${validPage}:`, pageError);
+            throw pageError;
+          }
+
+          const typedPageData = (pageData as unknown as CloudflareDomain[]) || [];
+
+          console.log('Fetched page data:', {
+            count: typedPageData.length,
+            hasData: typedPageData.length > 0,
+            firstItem: typedPageData[0]
+          });
+
+          // Update state with the fetched page data and pagination info
+          // No need for allDomains or domains state if filtering/pagination is server-side
+          // We directly set filteredDomains which is used for rendering the table
+          setFilteredDomains(typedPageData);
+          setTotalPages(calculatedTotalPages);
           setResultInfo({
-            page: validFilteredPage,
-            per_page: 25,
-            total_pages: totalFilteredPages,
-            count: currentPageSlice.length,
-            total_count: filteredResults.length
+            page: validPage,
+            per_page: PAGE_SIZE,
+            total_pages: calculatedTotalPages,
+            count: typedPageData.length, // Count of items on the current page
+            total_count: totalCount // Total count matching filters
           });
         } catch (error) {
           console.error('Error loading domains:', error);
@@ -415,7 +354,7 @@ export default function DomainsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [isAdmin, user?.email, searchQuery, statusFilter, currentPage]); // Simplified dependencies
+  }, [isAdmin, user?.email, searchQuery, statusFilter, currentPage, applyFilters]); // Added applyFilters dependency back
 
   // Load domains only when auth state (isAdmin and user.email for non-admins) is confirmed, or page changes
   useEffect(() => {
@@ -444,7 +383,7 @@ export default function DomainsPage() {
     load();
   
     return () => controller.abort();
-  }, [isAdmin, user?.email]); // Remove currentPage if not needed for initial load
+  }, [isAdmin, user?.email, loadDomains]); // Add loadDomains as dependency
   
   
   
@@ -547,7 +486,9 @@ export default function DomainsPage() {
           (assignedUsers && domain?.id && assignedUsers[domain.id] === user.email)))
         ) {
         console.log('[Realtime] Domain change detected', payload); // Keep a simpler log
-        await loadDomains({ useMockData: false, signal: controller.signal }); // Consider if loadDomains needs to be called here or just state update
+        // Reload the current page on domain changes
+        console.log('[Realtime] Domain change detected, reloading current page data', payload);
+        await loadDomains({ useMockData: false, signal: controller.signal });
         }
       }
       )
@@ -557,7 +498,7 @@ export default function DomainsPage() {
       controller.abort();
       channel.unsubscribe();
     };
-  }, [isAdmin, user?.email]); // Remove loadAssignedUsers from dependencies
+  }, [isAdmin, user?.email, loadDomains, loadAssignedUsers, assignedUsers]); // Add dependencies
 
   // Handle dialog state
   const handleOpenChange = (open: boolean) => {
@@ -672,43 +613,15 @@ export default function DomainsPage() {
       totalData: domains.length // Using filtered domains from domains state
     });
 
-    // Validate page number using filtered results
-    const maxPage = Math.ceil(domains.length / 25);
+    // Validate page number using totalPages state (which is now based on totalCount)
+    const maxPage = totalPages || 1;
     const validPage = Math.min(Math.max(1, newPage), maxPage);
-    
+
     if (validPage !== currentPage) {
-      // Calculate new page slice from filtered results
-      const start = (validPage - 1) * 25;
-      const pageEnd = Math.min(start + 25, domains.length);
-      const pageData = domains.slice(start, pageEnd);
-      
-      // Update state
+      // Simply update the currentPage state.
+      // The useEffect hook watching currentPage will trigger loadDomains to fetch the new page.
       setCurrentPage(validPage);
-      setFilteredDomains(pageData);
-      setResultInfo(prev => {
-        if (!prev) {
-          return {
-            page: validPage,
-            per_page: 25,
-            total_pages: Math.ceil(domains.length / 25),
-            count: pageData.length,
-            total_count: domains.length
-          } as ResultInfo;
-        }
-        return {
-          ...prev,
-          page: validPage,
-          count: pageData.length,
-          total_count: domains.length
-        };
-      });
-      
-      console.log('Page changed:', {
-        page: validPage,
-        showing: pageData.length,
-        range: `${start + 1}-${pageEnd}`,
-        total: domains.length
-      });
+      console.log(`Page change requested to ${validPage}, loadDomains will fetch.`);
     }
   };
   
@@ -797,29 +710,10 @@ export default function DomainsPage() {
       }
       console.log(`Successfully deleted domain ID ${selectedDomainForDeletion.id} from Supabase.`);
 
-      // Remove domain from local state
-      const newDomains = allDomains.filter(d => d.id !== selectedDomainForDeletion.id);
-      setAllDomains(newDomains);
-      setDomains(newDomains); // Update the filtered list as well
-      // Recalculate pagination based on the new 'domains' list
-      const newTotalFilteredPages = Math.ceil(newDomains.length / 25);
-      const newValidFilteredPage = Math.min(Math.max(1, currentPage), newTotalFilteredPages || 1);
-      const newStartIndex = (newValidFilteredPage - 1) * 25;
-      const newEndIndex = Math.min(newStartIndex + 25, newDomains.length);
-      const newCurrentPageSlice = newDomains.slice(newStartIndex, newEndIndex);
-
-      setFilteredDomains(newCurrentPageSlice); // Update the displayed page
-      setTotalPages(newTotalFilteredPages || 1); // Update total pages
-      if (newValidFilteredPage !== currentPage) {
-          setCurrentPage(newValidFilteredPage); // Adjust current page if needed
-      }
-       setResultInfo(_prev => ({ // Prefix unused variable with underscore
-           page: newValidFilteredPage,
-           per_page: 25,
-           total_pages: newTotalFilteredPages || 1,
-           count: newCurrentPageSlice.length,
-           total_count: newDomains.length
-       }));
+      // After successful deletion, reload the current page data
+      // This will naturally handle pagination adjustments if the current page becomes empty
+      console.log(`[handleDeleteDomain] Domain deleted, reloading current page data.`);
+      await loadDomains({ useMockData: false });
 
 
       // Remove domain assignments
@@ -1083,7 +977,7 @@ export default function DomainsPage() {
               
               // Force refresh the domain list to update with assignments
               setTimeout(() => {
-                loadDomains({ useMockData: false}) // Call without arguments
+                loadDomains({ useMockData: false }) // Reload current page
               }, 1000);
             }
           } catch (assignError) {
@@ -1104,7 +998,7 @@ export default function DomainsPage() {
           toast.success('Domain added successfully');
           
           // Reload domains to ensure proper filtering
-          loadDomains({ useMockData: false });
+          loadDomains({ useMockData: false }); // Reload current page
         }
 
         // Show nameservers
@@ -1556,12 +1450,12 @@ export default function DomainsPage() {
             </div>
 
             {/* Pagination controls */}
-            {console.log('Rendering pagination:', {
+            {/* console.log('Rendering pagination:', {
               filteredLength: filteredDomains.length,
               totalCount: resultInfo?.total_count,
               totalPages: totalPages, // Use the state variable
               currentPage
-            })}
+            }) */}
             <div className="flex justify-between items-center pt-4">
               <div className="text-sm text-muted-foreground">
                 {`Showing ${filteredDomains.length} of ${resultInfo?.total_count || 0} domains`}
@@ -1650,7 +1544,7 @@ export default function DomainsPage() {
                           setIsAssignDialogOpen(false);
                           
                           // Reload domains and assignments to reflect changes
-                          await loadDomains({ useMockData: false});
+                          await loadDomains({ useMockData: false }); // Reload current page
                           await loadAssignedUsers();
                         } catch (error) {
                           console.error('Error assigning domain:', error);
@@ -1721,7 +1615,7 @@ export default function DomainsPage() {
                       });
 
                       // Reload domains to reflect changes
-                      await loadDomains({ useMockData: false });
+                      await loadDomains({ useMockData: false }); // Reload current page
                     } catch (error) {
                       console.error('Error unassigning domain:', error);
                       toast.error('Failed to unassign domain');

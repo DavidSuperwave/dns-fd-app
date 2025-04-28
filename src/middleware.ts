@@ -105,9 +105,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // If trying to access a public route (like login/signup) with an active session, redirect to domains
-  if (isPublicPath && session) {
-     console.log(`[Middleware] Active session & isPublicPath=true, redirecting from ${pathname} to /domains`);
+  // If trying to access a public route (like login/signup) with an active session AND no session error, redirect to domains
+  if (isPublicPath && session && !sessionError) {
+     console.log(`[Middleware] Active session & no error & isPublicPath=true, redirecting from ${pathname} to /domains`);
      return NextResponse.redirect(new URL('/domains', request.url));
   }
 

@@ -36,13 +36,19 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
 
   // Memoize loadFiles function to keep it stable between renders
   const loadFiles = useCallback(async () => {
+    console.log('[loadFiles] Starting...'); // Added log
     setIsLoading(true);
     try {
+      console.log('[loadFiles] Fetching file list for domain:', domainId); // Added log
       const { data, error } = await supabaseAdmin.storage
         .from('domain-csv-files')
         .list(domainId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('[loadFiles] Error listing files:', error); // Added log
+        throw error;
+      }
+      console.log('[loadFiles] File list fetched:', data); // Added log
 
       // Filter out system files and only include CSVs
       const csvFiles = (data || []).filter(file =>
@@ -50,45 +56,59 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
         file.name.endsWith('.csv')
       );
 
+      console.log('[loadFiles] Generating signed URLs for', csvFiles.length, 'files...'); // Added log
       const filesWithUrls = await Promise.all(csvFiles.map(async (file) => {
         const filePath = `${domainId}/${file.name}`;
         
         // Get signed URL for downloading
+        console.log('[loadFiles] Getting signed URL for:', filePath); // Added log
         const { data, error: signedUrlError } = await supabaseAdmin.storage
           .from('domain-csv-files')
           .createSignedUrl(filePath, 60); // URL valid for 60 seconds
 
+        if (signedUrlError) {
+          console.error('[loadFiles] Error getting signed URL for', filePath, ':', signedUrlError); // Added log
+          throw signedUrlError;
+        }
         if (!data || !data.signedUrl) {
-          throw new Error('Failed to generate signed URL');
+          console.error('[loadFiles] Failed to generate signed URL data for', filePath); // Added log
+          throw new Error(`Failed to generate signed URL for ${filePath}`);
         }
 
         const signedUrl = data.signedUrl;
-
-        if (signedUrlError) throw signedUrlError;
+        console.log('[loadFiles] Signed URL generated for:', filePath); // Added log
 
         return {
           name: file.name,
           downloadUrl: signedUrl
         };
       }));
+      console.log('[loadFiles] Signed URLs generated.'); // Added log
 
       setFiles(filesWithUrls);
+      console.log('[loadFiles] Files state updated.'); // Added log
       
       // Update has_files in database if it doesn't match reality
       const hasAnyFiles = filesWithUrls.length > 0;
       if (hasAnyFiles !== hasFiles) {
+        console.log('[loadFiles] Checking if has_files update needed. Current:', hasFiles, 'Actual:', hasAnyFiles); // Added log
         const { error: updateError } = await supabaseAdmin
           .from('domains')
           .update({ has_files: hasAnyFiles })
           .eq('id', domainId);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          console.error('[loadFiles] Error updating has_files flag:', updateError); // Added log
+          throw updateError;
+        }
         setHasFiles(hasAnyFiles);
+        console.log('[loadFiles] has_files state updated.'); // Added log
       }
     } catch (error) {
-      console.error('Error loading files:', error);
+      console.error('[loadFiles] Error caught in loadFiles:', error); // Modified log
       toast.error('Failed to load files');
     } finally {
+      console.log('[loadFiles] Setting isLoading to false.'); // Added log
       setIsLoading(false);
     }
   }, [domainId, hasFiles]); // Include all dependencies
@@ -96,32 +116,49 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
   // Load files when dialog opens
   useEffect(() => {
     if (isDialogOpen) {
+      console.log('[useEffect] Dialog opened, calling loadFiles.'); // Added log
       loadFiles();
+    } else {
+      console.log('[useEffect] Dialog closed.'); // Added log
     }
   }, [isDialogOpen, loadFiles]); // loadFiles is now stable
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('--- handleFileChange FUNCTION ENTERED ---'); // Log 1
     const file = e.target.files?.[0];
-    if (!file) return;
+    console.log('[handleFileChange] File selected:', file?.name); // Log 2
+    if (!file) {
+      console.log('[handleFileChange] No file selected.'); // Added log
+      return;
+    }
 
     // Validate file type
     if (!file.name.endsWith('.csv')) {
+      console.log('[handleFileChange] Invalid file type:', file.name); // Added log
       toast.error('Please select a CSV file');
       return;
     }
 
+    // Set uploading state *immediately* after confirming a valid file
     setIsUploading(true);
+    console.log('[handleFileChange] Set isUploading=true'); // Log 3
 
     try {
       // Read and validate file content
+      console.log('[handleFileChange] Reading file content...'); // Log 4
       const content = await file.text();
+      console.log('[handleFileChange] File content read. Validating...'); // Log 5
       const validation = await validateCsvContent(content);
+      console.log('[handleFileChange] Validation result:', validation); // Log 6
 
       if (validation.hasErrors) {
+        console.log('[handleFileChange] Validation failed. Showing dialog.'); // Log 7a
         setValidationErrors(validation);
         setShowValidationDialog(true);
-        return;
+        // No need to set isUploading false here, finally block handles it
+        return; // Exit early
       }
+      console.log('[handleFileChange] Validation successful.'); // Log 7b
 
       // Create filename with timestamp and unique ID
       const now = new Date();
@@ -134,32 +171,61 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       const timestamp = `${month}${day}${year}_${hours}${minutes}`;
       const uniqueId = Date.now();
       const fileName = `${timestamp}_${uniqueId}.csv`;
+      const filePath = `${domainId}/${fileName}`;
+      console.log('[handleFileChange] Generated filename:', fileName); // Log 8
 
       // Upload file to storage
+      console.log('[handleFileChange] Uploading file to Supabase storage:', filePath); // Log 9
       const { error: uploadError } = await supabaseAdmin.storage
         .from('domain-csv-files')
-        .upload(`${domainId}/${fileName}`, file);
+        .upload(filePath, file);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('[handleFileChange] Supabase upload error:', uploadError); // Log 10a
+        throw uploadError;
+      }
+      console.log('[handleFileChange] File uploaded successfully.'); // Log 10b
 
       // Update has_files flag
+      console.log('[handleFileChange] Updating has_files flag in database...'); // Log 11
       const { error: updateError } = await supabaseAdmin
         .from('domains')
         .update({ has_files: true })
         .eq('id', domainId);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('[handleFileChange] Error updating has_files flag:', updateError); // Log 12a
+        throw updateError;
+      }
+      console.log('[handleFileChange] has_files flag updated.'); // Log 12b
 
       setHasFiles(true);
       toast.success('CSV file uploaded successfully');
+      console.log('[handleFileChange] Calling loadFiles to refresh list...'); // Log 13
       await loadFiles(); // Refresh file list
+      console.log('[handleFileChange] loadFiles finished.'); // Log 14
     } catch (error) {
-      console.error('Error processing file:', error);
+      console.error('[handleFileChange] Error caught during file processing:', error); // Log 15 (Error path)
       toast.error(error instanceof Error ? error.message : 'Failed to process CSV file');
     } finally {
+      console.log('[handleFileChange] Entering finally block.'); // Log 16 (Always runs)
       setIsUploading(false);
-      setValidationErrors(null);
-      setShowValidationDialog(false);
+      console.log('[handleFileChange] Set isUploading=false in finally.'); // Log 17 (Always runs)
+      // Reset validation state only if it wasn't set due to errors
+      if (!validationErrors && showValidationDialog) {
+         // If validation dialog was shown due to error, don't reset here
+         // It will be reset when the dialog is closed by the user
+         console.log('[handleFileChange] Skipping validation reset in finally (dialog shown).'); // Log 18a
+      } else {
+         setValidationErrors(null);
+         setShowValidationDialog(false);
+         console.log('[handleFileChange] Reset validation state in finally.'); // Log 18b
+      }
+      // Clear the file input value so the same file can be selected again if needed
+      if (e.target) {
+        e.target.value = '';
+        console.log('[handleFileChange] Cleared file input value.'); // Log 19
+      }
     }
   };
 
@@ -222,7 +288,7 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       )}
       <input
         type="file"
-        accept=".csv"
+        accept="text/csv,.csv"
         onChange={handleFileChange}
         className="hidden"
         id={`csv-upload-${domainId}`}
@@ -318,7 +384,17 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
                     variant="outline"
                     size="sm"
                     className="w-full"
-                    onClick={() => document.getElementById(`csv-upload-${domainId}`)?.click()}
+                    onClick={() => {
+                      console.log('--- "Upload New CSV" button onClick HANDLER ENTERED ---'); // Button Log 6
+                      const fileInput = document.getElementById(`csv-upload-${domainId}`);
+                      console.log('[CSVUpload] Found file input element (dialog):', fileInput); // Button Log 7
+                      if (fileInput) {
+                        console.log('[CSVUpload] Triggering click on file input (dialog).'); // Button Log 8
+                        fileInput.click();
+                      } else {
+                        console.error('[CSVUpload] Could not find file input element (dialog)!'); // Button Log 9 (Error)
+                      }
+                    }}
                     disabled={isUploading}
                   >
                   {isUploading ? (
