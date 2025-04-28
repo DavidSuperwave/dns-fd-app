@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '../lib/supabase-client';
+import { createClient } from '../lib/supabase-client'; // Import createClient
 import { ScanResult } from '../types/scan';
+import type { SupabaseClient } from '@supabase/supabase-js'; // Import SupabaseClient type
 
 // Configuration constants
 const RETRY_DELAY = 5000; // 5 seconds
@@ -11,6 +12,7 @@ const POLL_INTERVAL = 30000; // 30 seconds
 const SUBSCRIPTION_TIMEOUT = 10000; // 10 seconds
 
 export function useLatestScan() {
+  const supabase = createClient(); // Create client instance
   const [loading, setLoading] = useState<boolean>(true);
   const [latestScan, setLatestScan] = useState<ScanResult | null>(null);
   interface ScanResultData {
@@ -24,7 +26,8 @@ export function useLatestScan() {
   const [error, setError] = useState<string | null>(null);
   
   // Refs for cleanup and debouncing
-  type SupabaseSubscription = ReturnType<ReturnType<typeof supabase.channel>['subscribe']>;
+  // Define the subscription type based on the actual client instance type
+  type SupabaseSubscription = ReturnType<ReturnType<ReturnType<typeof createClient>['channel']>['subscribe']>;
   const subscriptionRef = useRef<SupabaseSubscription | null>(null);
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);

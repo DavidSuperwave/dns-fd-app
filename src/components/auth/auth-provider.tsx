@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase, supabaseAdmin } from "../../lib/supabase-client";
+import { createClient, supabaseAdmin } from "../../lib/supabase-client"; // Import createClient instead of supabase
 import { User } from "@supabase/supabase-js";
 import { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
@@ -24,6 +24,9 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children, initialSession }: AuthProviderProps) { // Accept initialSession prop
+  // Create the Supabase client instance for the browser
+  const supabase = createClient();
+
   // Function to check if user is admin
   const checkAdminStatus = (user: User | null): boolean => {
     if (!user) return false;

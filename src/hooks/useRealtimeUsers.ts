@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // Import useCallback
 import { toast } from 'sonner';
-import { supabaseAdmin, UserProfile, fetchUsers } from '@/lib/supabase-client';
+import { supabaseAdmin, UserProfile, fetchUsers, createClient } from '@/lib/supabase-client'; // Import createClient
 import { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 // Define the structure for the invitations table data
@@ -15,25 +15,29 @@ interface Invitation {
 }
 
 export function useRealtimeUsers(isAdmin: boolean) {
+  const supabase = createClient(); // Create client instance for the hook
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Define loadUsers using useCallback outside useEffect
+  const loadUsers = useCallback(async () => {
+    setIsLoading(true); // Set loading true when fetching
+    try {
+      // Pass the client instance to fetchUsers
+      const usersData = await fetchUsers(supabase);
+      setUsers(usersData);
+    } catch (error) {
+      console.error('Error loading users:', error);
+      toast.error('Failed to load users');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [supabase]); // Add supabase as dependency
 
   useEffect(() => {
     let profilesSubscription: RealtimeChannel;
     let invitationsSubscription: RealtimeChannel;
     let authUnsubscribe: (() => void) | undefined;
-
-    const loadUsers = async () => {
-      try {
-        const usersData = await fetchUsers();
-        setUsers(usersData);
-      } catch (error) {
-        console.error('Error loading users:', error);
-        toast.error('Failed to load users');
-      } finally {
-        setIsLoading(false);
-      }
-    };
 
     // Only set up subscriptions for admin users
     if (isAdmin) {
@@ -221,18 +225,9 @@ export function useRealtimeUsers(isAdmin: boolean) {
         console.error('Error cleaning up subscriptions:', error);
       }
     };
-  }, [isAdmin]);
+  // Pass loadUsers defined with useCallback as dependency
+  }, [isAdmin, loadUsers]);
 
-  // Expose loadUsers function for manual refresh
-  const loadUsers = async () => {
-    try {
-      const usersData = await fetchUsers();
-      setUsers(usersData);
-    } catch (error) {
-      console.error('Error loading users:', error);
-      toast.error('Failed to load users');
-    }
-  };
-
+  // No need for duplicate definition, return the one defined with useCallback
   return { users, isLoading, setUsers, refresh: loadUsers };
 }

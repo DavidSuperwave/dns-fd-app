@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { performBackgroundScan } from '../lib/background-scan';
 import { useLatestScan } from './useLatestScan';
-import { supabase } from '../lib/supabase-client';
+import { createClient } from '../lib/supabase-client'; // Import createClient
 import { ProgressTracker, ScanResult } from '../types/scan';
 import { RealtimePostgresInsertPayload } from "@supabase/supabase-js";
 
@@ -19,6 +19,7 @@ interface ScanState {
 }
 
 export function useBackgroundScan() {
+  const supabase = createClient(); // Create client instance
   // Use a single state object to prevent race conditions
   const [scanState, setScanState] = useState<ScanState>({
     inProgress: false,
@@ -63,7 +64,7 @@ export function useBackgroundScan() {
     
     const subscription = supabase
       .channel('scan_progress')
-      .on('postgres_changes', {
+      .on('postgres_changes' as any, { // Cast to any as workaround for TS error
         event: '*',
         schema: 'public',
         table: 'scan_results'

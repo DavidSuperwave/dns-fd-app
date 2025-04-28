@@ -1,7 +1,7 @@
 import { fetchDomains, fetchDnsRecords } from "./cloudflare-api";
 import { createScanRecord, updateScanRecord, completeScanRecord, failScanRecord } from "./supabase-scan-service";
 import { CloudflareDomain } from "./cloudflare-api";
-import { supabase } from "./supabase-client";
+import { supabaseAdmin } from "./supabase-client"; // Use supabaseAdmin for background tasks
 
 // Helper function to update domain redirects in Supabase
 async function updateDomainRedirects(domains: CloudflareDomain[]) {
@@ -11,8 +11,8 @@ async function updateDomainRedirects(domains: CloudflareDomain[]) {
     // Get all cloudflare_ids from the current scan
     const currentIds = domains.map(domain => domain.id);
     
-    // Delete domains that are no longer in Cloudflare
-    const { error: deleteError } = await supabase
+    // Delete domains that are no longer in Cloudflare using admin client
+    const { error: deleteError } = await supabaseAdmin
       .from('domains')
       .delete()
       .not('cloudflare_id', 'in', `(${currentIds.map(id => `'${id}'`).join(',')})`);

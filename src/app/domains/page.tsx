@@ -5,7 +5,7 @@ import { CSVUpload } from "@/components/domains/csv-upload";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
 import { PlusCircle, ExternalLink, Loader2, AlertTriangle } from "lucide-react";
-import { supabase, supabaseAdmin } from "@/lib/supabase-client";
+import { createClient, supabaseAdmin } from "@/lib/supabase-client"; // Import createClient
 import {
   Table,
   TableBody,
@@ -98,6 +98,7 @@ const mockResultInfo: ResultInfo = {
 export default function DomainsPage() {
   const router = useRouter();
   const { user, isAdmin } = useAuth();
+  const supabase = createClient(); // Create client instance
   const [allDomains, setAllDomains] = useState<CloudflareDomain[]>([]);
   const [domains, setDomains] = useState<CloudflareDomain[]>([]);
   const [filteredDomains, setFilteredDomains] = useState<CloudflareDomain[]>([]);

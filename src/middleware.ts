@@ -17,12 +17,7 @@ const createClient = (request: NextRequest) => {
         get(name: string) {
           try {
             let cookieValue = request.cookies.get(name)?.value;
-            // Check for and remove the unexpected "base64-" prefix
-            if (cookieValue?.startsWith('base64-')) {
-              console.warn(`[Middleware] Removing "base64-" prefix from cookie: ${name}`);
-              cookieValue = cookieValue.substring(7); // Remove "base64-"
-            }
-            // console.log(`[Middleware] Cookie ${name}: ${cookieValue}`); // Optional: Log cookie value after potential fix
+            // console.log(`[Middleware] Cookie ${name}: ${cookieValue}`); // Let Supabase handle potential prefixes
             return cookieValue ?? null;
           } catch (error) {
             console.error('Error getting cookie:', error);
