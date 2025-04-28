@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient, supabaseAdmin } from "../../lib/supabase-client"; // Import createClient instead of supabase
+import { createClient } from "../../lib/supabase-client"; // Import createClient, removed supabaseAdmin
 import { User } from "@supabase/supabase-js";
 import { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
@@ -133,23 +133,10 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
         } else if (event === "SIGNED_IN") {
           if (!currentUser) return;
 
-          // Create user profile if it doesn't exist
-          const { error: profileError } = await supabaseAdmin
-            .from('user_profiles')
-            .insert({
-              id: currentUser.id,
-              email: currentUser.email,
-              name: currentUser.user_metadata?.name || currentUser.email?.split('@')[0],
-              role: currentUser.user_metadata?.role || 'user',
-              status: 'active',
-              active: true
-            })
-            .select()
-            .single();
-
-          if (profileError && !profileError.message.includes('duplicate')) {
-            console.error('[Auth Provider] Error creating profile:', profileError);
-          }
+          // --- Removed Profile Creation Logic ---
+          // Profile creation using supabaseAdmin was removed as it's insecure client-side.
+          // This should be handled server-side (e.g., DB trigger, API route).
+          // console.log('[Auth Provider] Profile creation logic removed from client-side.');
 
           // Check if user has admin metadata
           if (checkAdminStatus(currentUser)) {

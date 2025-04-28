@@ -1,7 +1,29 @@
 import { fetchDomains, fetchDnsRecords } from "./cloudflare-api";
 import { createScanRecord, updateScanRecord, completeScanRecord, failScanRecord } from "./supabase-scan-service";
 import { CloudflareDomain } from "./cloudflare-api";
-import { supabaseAdmin } from "./supabase-client"; // Use supabaseAdmin for background tasks
+import { createClient as createAdminClient } from '@supabase/supabase-js';
+
+const DEBUG_PREFIX = '[Background Scan]'; // Define DEBUG_PREFIX earlier
+
+// --- Server-Side Admin Client Initialization ---
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+let localSupabaseAdmin: ReturnType<typeof createAdminClient> | null = null;
+
+if (supabaseUrl && supabaseServiceKey) {
+  localSupabaseAdmin = createAdminClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
+  console.log(`${DEBUG_PREFIX} Local Supabase admin client initialized.`);
+} else {
+  console.error(`${DEBUG_PREFIX} CRITICAL: Supabase URL or Service Key missing. Cannot initialize admin client.`);
+  // Consider throwing an error if admin operations are absolutely required later
+  // throw new Error("Missing Supabase credentials for background scan admin client.");
+}
 
 // Helper function to update domain redirects in Supabase
 async function updateDomainRedirects(domains: CloudflareDomain[]) {
@@ -11,18 +33,28 @@ async function updateDomainRedirects(domains: CloudflareDomain[]) {
     // Get all cloudflare_ids from the current scan
     const currentIds = domains.map(domain => domain.id);
     
-    // Delete domains that are no longer in Cloudflare using admin client
-    const { error: deleteError } = await supabaseAdmin
-      .from('domains')
-      .delete()
-      .not('cloudflare_id', 'in', `(${currentIds.map(id => `'${id}'`).join(',')})`);
+    // --- Delete old domains ---
+    if (!localSupabaseAdmin) {
+      console.error(`${DEBUG_PREFIX} Admin client not available. Skipping deletion of old domains.`);
+    } else if (currentIds.length > 0) { // Only delete if there are current IDs to compare against
+      console.log(`${DEBUG_PREFIX} Deleting domains from DB not present in the latest Cloudflare scan.`);
+      const { error: deleteError } = await localSupabaseAdmin
+        .from('domains')
+        .delete()
+        // Ensure IDs are properly quoted if they are strings (like UUIDs or Cloudflare IDs)
+        .not('cloudflare_id', 'in', `(${currentIds.map(id => `'${id}'`).join(',')})`);
 
-    if (deleteError) {
-      console.error(`${DEBUG_PREFIX} Error deleting old domains:`, deleteError);
-      throw deleteError;
+      if (deleteError) {
+        console.error(`${DEBUG_PREFIX} Error deleting old domains:`, deleteError);
+        // Decide how to handle - maybe log and continue?
+      } else {
+        console.log(`${DEBUG_PREFIX} Successfully deleted old domains.`);
+      }
+    } else {
+       console.log(`${DEBUG_PREFIX} No current domains found in scan batch. Skipping deletion.`);
     }
 
-    // Update remaining domains
+    // Update remaining domains (prepare data)
     const updates = domains.map(domain => ({
       cloudflare_id: domain.id,
       name: domain.name,
@@ -34,19 +66,31 @@ async function updateDomainRedirects(domains: CloudflareDomain[]) {
       redirect_url: domain.redirect_url
     }));
 
-    const { error: upsertError } = await supabase
-      .from('domains')
-      .upsert(updates, {
-        onConflict: 'cloudflare_id'
-      });
+    // --- Upsert current domains ---
+    if (!localSupabaseAdmin) {
+       console.error(`${DEBUG_PREFIX} Admin client not available. Skipping upsert of domain data.`);
+    } else if (updates.length > 0) {
+      console.log(`${DEBUG_PREFIX} Upserting ${updates.length} domains into DB.`);
+      const { error: upsertError } = await localSupabaseAdmin
+        .from('domains')
+        .upsert(updates, {
+          onConflict: 'cloudflare_id', // Assumes 'cloudflare_id' is the unique constraint column
+          ignoreDuplicates: false // Ensure existing rows are updated
+        });
 
-    if (upsertError) {
-      console.error(`${DEBUG_PREFIX} Error updating domain redirects:`, upsertError);
-      throw upsertError;
+      if (upsertError) {
+        console.error(`${DEBUG_PREFIX} Error upserting domain data:`, upsertError);
+        // Decide how to handle - maybe log and continue?
+      } else {
+         console.log(`${DEBUG_PREFIX} Successfully upserted ${updates.length} domains.`);
+      }
+    } else {
+       console.log(`${DEBUG_PREFIX} No domains in current batch to upsert.`);
     }
 
-    console.log(`${DEBUG_PREFIX} Successfully synced ${domains.length} domains`);
-  } catch (error) {
+    // Adjust final log message
+    console.log(`${DEBUG_PREFIX} Finished syncing batch of ${domains.length} domains.`);
+  } catch (error) { // This catch block corresponds to the try block starting at line 10
     console.error(`${DEBUG_PREFIX} Failed to update domain redirects:`, error);
     throw error;
   }
@@ -78,7 +122,7 @@ interface ScanResult {
   totalPages: number;
 }
 
-const DEBUG_PREFIX = '[Background Scan]';
+// DEBUG_PREFIX moved higher up
 
 // Perform a background scan of all Cloudflare domains
 export async function performBackgroundScan(perPage: number = 50): Promise<ScanResult | null> {

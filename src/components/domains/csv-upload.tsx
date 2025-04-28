@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { supabaseAdmin } from '@/lib/supabase-client'; // Removed unused 'supabase' import
+import { createClient } from '@/lib/supabase-client'; // Import createClient, removed supabaseAdmin
 import { toast } from 'sonner';
 import { FileIcon, Loader2, Download } from 'lucide-react';
 import { validateCsvContent } from '@/lib/csv-validator';
@@ -22,6 +22,7 @@ interface CSVUploadProps {
 }
 
 export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: CSVUploadProps) {
+  const supabase = createClient(); // Instantiate the regular client
   const [showValidationDialog, setShowValidationDialog] = useState(false);
   const [validationErrors, setValidationErrors] = useState<{
     errors: string[];
@@ -40,7 +41,8 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
     setIsLoading(true);
     try {
       console.log('[loadFiles] Fetching file list for domain:', domainId); // Added log
-      const { data, error } = await supabaseAdmin.storage
+      // Use regular client - This might fail if RLS restricts listing
+      const { data, error } = await supabase.storage
         .from('domain-csv-files')
         .list(domainId);
 
@@ -60,28 +62,28 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       const filesWithUrls = await Promise.all(csvFiles.map(async (file) => {
         const filePath = `${domainId}/${file.name}`;
         
-        // Get signed URL for downloading
-        console.log('[loadFiles] Getting signed URL for:', filePath); // Added log
-        const { data, error: signedUrlError } = await supabaseAdmin.storage
-          .from('domain-csv-files')
-          .createSignedUrl(filePath, 60); // URL valid for 60 seconds
-
-        if (signedUrlError) {
-          console.error('[loadFiles] Error getting signed URL for', filePath, ':', signedUrlError); // Added log
-          throw signedUrlError;
+        // --- Generate Signed URL via API ---
+        try {
+          const response = await fetch('/api/storage/signed-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filePath })
+          });
+          const result = await response.json();
+          if (!response.ok || !result.success || !result.signedUrl) {
+            console.error(`Error getting signed URL for ${filePath}:`, result.error || `Status ${response.status}`);
+            // Return with placeholder on error
+            return { name: file.name, downloadUrl: '#' };
+          }
+          console.log(`[loadFiles] Signed URL generated via API for: ${filePath}`);
+          return {
+            name: file.name,
+            downloadUrl: result.signedUrl // Use URL from API
+          };
+        } catch (apiError) {
+           console.error(`[loadFiles] API call failed for signed URL ${filePath}:`, apiError);
+           return { name: file.name, downloadUrl: '#' }; // Placeholder on API call failure
         }
-        if (!data || !data.signedUrl) {
-          console.error('[loadFiles] Failed to generate signed URL data for', filePath); // Added log
-          throw new Error(`Failed to generate signed URL for ${filePath}`);
-        }
-
-        const signedUrl = data.signedUrl;
-        console.log('[loadFiles] Signed URL generated for:', filePath); // Added log
-
-        return {
-          name: file.name,
-          downloadUrl: signedUrl
-        };
       }));
       console.log('[loadFiles] Signed URLs generated.'); // Added log
 
@@ -92,17 +94,27 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       const hasAnyFiles = filesWithUrls.length > 0;
       if (hasAnyFiles !== hasFiles) {
         console.log('[loadFiles] Checking if has_files update needed. Current:', hasFiles, 'Actual:', hasAnyFiles); // Added log
-        const { error: updateError } = await supabaseAdmin
-          .from('domains')
-          .update({ has_files: hasAnyFiles })
-          .eq('id', domainId);
-
-        if (updateError) {
-          console.error('[loadFiles] Error updating has_files flag:', updateError); // Added log
-          throw updateError;
+        // --- Update has_files via API ---
+        console.log(`[loadFiles] Updating has_files flag via API for ${domainId} to ${hasAnyFiles}.`);
+        try {
+          const updateResponse = await fetch(`/api/domains/${domainId}/has-files`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ has_files: hasAnyFiles })
+          });
+          if (!updateResponse.ok) {
+            const errorData = await updateResponse.json();
+            console.error(`Error updating has_files flag via API for ${domainId}:`, errorData.error);
+            toast.warning(`Failed to update file status for domain ${domainName}.`);
+            // Don't update local state if API fails
+          } else {
+             console.log(`[loadFiles] has_files flag updated via API for ${domainId} to ${hasAnyFiles}.`);
+             setHasFiles(hasAnyFiles); // Update local state only on successful API call
+          }
+        } catch (apiError) {
+           console.error(`[loadFiles] API call failed for has_files update ${domainId}:`, apiError);
+           toast.warning(`API Error: Failed to update file status for domain ${domainName}.`);
         }
-        setHasFiles(hasAnyFiles);
-        console.log('[loadFiles] has_files state updated.'); // Added log
       }
     } catch (error) {
       console.error('[loadFiles] Error caught in loadFiles:', error); // Modified log
@@ -178,7 +190,8 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
 
       // Upload file to storage
       console.log('[handleFileChange] Uploading file to Supabase storage:', filePath); // Log 9
-      const { error: uploadError } = await supabaseAdmin.storage
+      // Use regular client - This might fail if RLS restricts uploads
+      const { error: uploadError } = await supabase.storage
         .from('domain-csv-files')
         .upload(filePath, file);
 
@@ -188,21 +201,29 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       }
       console.log('[handleFileChange] File uploaded successfully.'); // Log 10b
 
-      // Update has_files flag
-      console.log('[handleFileChange] Updating has_files flag in database...'); // Log 11
-      const { error: updateError } = await supabaseAdmin
-        .from('domains')
-        .update({ has_files: true })
-        .eq('id', domainId);
-
-      if (updateError) {
-        console.error('[handleFileChange] Error updating has_files flag:', updateError); // Log 12a
-        throw updateError;
+      // --- Update has_files via API ---
+      console.log(`[handleFileChange] Updating has_files flag via API for ${domainId} to true.`);
+      try {
+        const updateResponse = await fetch(`/api/domains/${domainId}/has-files`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ has_files: true })
+        });
+        if (!updateResponse.ok) {
+          const errorData = await updateResponse.json();
+          console.error(`Error updating has_files flag via API after upload for ${domainId}:`, errorData.error);
+          toast.warning("File uploaded, but failed to update domain status.");
+          // Don't update local state if API fails
+        } else {
+           console.log(`[handleFileChange] has_files flag updated via API for ${domainId} to true.`);
+           setHasFiles(true); // Update local state on successful API call
+           toast.success('CSV file uploaded and status updated successfully');
+        }
+      } catch (apiError) {
+         console.error(`[handleFileChange] API call failed for has_files update ${domainId}:`, apiError);
+         toast.warning(`API Error: File uploaded, but failed to update domain status.`);
       }
-      console.log('[handleFileChange] has_files flag updated.'); // Log 12b
 
-      setHasFiles(true);
-      toast.success('CSV file uploaded successfully');
       console.log('[handleFileChange] Calling loadFiles to refresh list...'); // Log 13
       await loadFiles(); // Refresh file list
       console.log('[handleFileChange] loadFiles finished.'); // Log 14
@@ -233,7 +254,8 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
 
   const handleDelete = async (fileName: string) => {
     try {
-      const { error: deleteError } = await supabaseAdmin.storage
+      // Use regular client - This might fail if RLS restricts deletes
+      const { error: deleteError } = await supabase.storage
         .from('domain-csv-files')
         .remove([`${domainId}/${fileName}`]);
 

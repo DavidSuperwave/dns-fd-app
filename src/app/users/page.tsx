@@ -7,7 +7,7 @@ import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Button } from '@/components/ui/button';
 import { v4 as uuidv4 } from 'uuid';
 import { sendInvitationEmail } from '@/lib/azure-email';
-import { supabaseAdmin, supabaseServiceKey } from '@/lib/supabase-client';
+import { createClient } from '@/lib/supabase-client'; // Import createClient, removed supabaseAdmin and supabaseServiceKey
 import {
   Table,
   TableBody,
@@ -39,8 +39,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/components/auth/auth-provider';
 import {
   UserProfile,
-  deleteUser,
-  toggleUserStatus
+  // Removed deleteUser, toggleUserStatus imports as they are now handled via API
 } from '@/lib/supabase-client';
 
 function UsersPage() {
@@ -84,7 +83,7 @@ function UsersPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseServiceKey}`
+          // REMOVED Authorization header - API endpoint must handle auth internally
         },
         body: JSON.stringify({
           email: invitation.email,
@@ -172,19 +171,37 @@ function UsersPage() {
     const user = users.find((u) => u.id === id);
     if (!user) return;
     
+    const newActiveState = !user.active;
+    const action = newActiveState ? "activate" : "deactivate";
+    const toastId = toast.loading(`${action === 'activate' ? 'Activating' : 'Deactivating'} user ${user.email}...`);
+
     try {
-      const success = await toggleUserStatus(id, !user.active);
-      if (success) {
-        // The real-time subscription will update the UI
-        toast.success(
-          `User ${user.email} ${user.active ? "deactivated" : "activated"}`
-        );
+      const response = await fetch(`/api/users/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ active: newActiveState }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Server responded with ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        // Real-time should update, but show success toast immediately
+        toast.success(`User ${user.email} ${action}d successfully.`, { id: toastId });
+        // Optionally trigger a manual refresh if real-time proves unreliable
+        // await refresh();
       } else {
-        toast.error(`Failed to ${user.active ? "deactivate" : "activate"} user`);
+         throw new Error('API call succeeded but action failed.');
       }
     } catch (error) {
-      console.error('Error toggling user status:', error);
-      toast.error(`Failed to ${user.active ? "deactivate" : "activate"} user`);
+      console.error(`Error toggling user status for ${id}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      toast.error(`Failed to ${action} user ${user.email}: ${errorMessage}`, { id: toastId });
     }
   };
 
@@ -192,18 +209,34 @@ function UsersPage() {
     const userToDelete = users.find((user) => user.id === id);
     if (!userToDelete) return;
     
+    const toastId = toast.loading(`Deleting user ${userToDelete.email}...`);
     try {
-      const success = await deleteUser(id);
-      if (success) {
-        toast.success(`User ${userToDelete.email} removed successfully`);
-        // Force a full page refresh to ensure everything is in sync
-        router.refresh();
+      const response = await fetch(`/api/users/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          // No body needed for DELETE
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Server responded with ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        toast.success(`User ${userToDelete.email} deleted successfully.`, { id: toastId });
+        // Real-time should handle removal, but refresh might be needed if not immediate
+        await refresh(); // Use the hook's refresh first
+        // router.refresh(); // Use as fallback if needed
       } else {
-        toast.error('Failed to delete user');
+        throw new Error('API call succeeded but deletion failed.');
       }
     } catch (error) {
-      console.error('Error deleting user:', error);
-      toast.error('Failed to delete user');
+      console.error(`Error deleting user ${id}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      toast.error(`Failed to delete user ${userToDelete.email}: ${errorMessage}`, { id: toastId });
     }
   };
 

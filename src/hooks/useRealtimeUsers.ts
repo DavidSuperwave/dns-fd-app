@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'; // Import useCallback
 import { toast } from 'sonner';
-import { supabaseAdmin, UserProfile, fetchUsers, createClient } from '@/lib/supabase-client'; // Import createClient
+import { UserProfile, fetchUsers, createClient } from '@/lib/supabase-client'; // Import createClient, removed supabaseAdmin
 import { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 // Define the structure for the invitations table data
@@ -41,8 +41,8 @@ export function useRealtimeUsers(isAdmin: boolean) {
 
     // Only set up subscriptions for admin users
     if (isAdmin) {
-      // Subscribe to user_profiles changes
-      profilesSubscription = supabaseAdmin
+      // Subscribe to user_profiles changes using the regular client
+      profilesSubscription = supabase
         .channel('user_profiles_changes')
         .on('postgres_changes',
           { event: 'DELETE', schema: 'public', table: 'user_profiles' },
@@ -122,8 +122,8 @@ export function useRealtimeUsers(isAdmin: boolean) {
         )
         .subscribe();
 
-      // Subscribe to invitations changes
-      invitationsSubscription = supabaseAdmin
+      // Subscribe to invitations changes using the regular client
+      invitationsSubscription = supabase
         .channel('invitations_changes')
         .on('postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'invitations' },
@@ -150,39 +150,43 @@ export function useRealtimeUsers(isAdmin: boolean) {
         )
         .subscribe();
 
-      // Subscribe to auth state changes
-      const { data: { subscription } } = supabaseAdmin.auth.onAuthStateChange(async (event, session) => { // Revert to supabaseAdmin as requested
+      // Subscribe to auth state changes using the regular client
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         console.log('Auth state change:', event, session?.user?.email);
-        
-        // Handle email confirmation
+
+        // Handle email confirmation - This update MUST happen server-side
         if (event === 'USER_UPDATED' && session?.user?.email_confirmed_at) {
           try {
-            // Update the user profile with confirmed status
-            const { error: updateError } = await supabaseAdmin
-              .from('user_profiles')
-              .update({
-                status: 'active',
-                confirmed_at: session.user.email_confirmed_at
-              })
-              .eq('id', session.user.id);
-
-            if (updateError) {
-              console.error('Error updating user confirmation status:', updateError);
-            } else {
-              console.log(`User ${session.user.email} confirmed and activated`);
-              // Reload users to reflect the status change
-              await loadUsers();
-            }
-          } catch (error) {
-            console.error('Error handling user confirmation:', error);
+            // --- Database Update REMOVED ---
+            // Updating user profile status requires server-side handling (e.g., DB trigger, API route).
+            console.warn(`[useRealtimeUsers] Skipping client-side profile update for confirmed user ${session?.user?.email}. Needs server-side implementation.`);
+            // const { error: updateError } = await supabaseAdmin // <<< PROBLEM: supabaseAdmin removed
+            //   .from('user_profiles')
+            //   .update({
+            //     status: 'active',
+            //     confirmed_at: session.user.email_confirmed_at // session is defined in the outer scope
+            //   })
+            //   .eq('id', session.user.id); // session is defined in the outer scope
+            //
+            // if (updateError) { // updateError is not defined here anymore
+            //   console.error('Error updating user confirmation status:', updateError);
+            // } else {
+            //   console.log(`User ${session?.user?.email} confirmed and activated`); // Use optional chaining for safety
+            //   // Reload users to potentially reflect the status change (if server updated it)
+            //   await loadUsers();
+            // }
+          } catch (error) { // This catch corresponds to the try block starting at line 159
+            console.error('Error during (skipped) user confirmation handling:', error);
           }
-        }
+        } // End of USER_UPDATED block
 
         // Sync tables and refresh users on relevant auth events
-        if (['SIGNED_UP', 'USER_DELETED'].includes(event)) {
+        // Ensure 'event' is treated as a string for includes check
+        const eventString = event as string;
+        if (['SIGNED_UP', 'USER_DELETED'].includes(eventString)) {
           console.log('Syncing tables due to auth change...');
-          
-          try {
+
+          try { // This try corresponds to the catch block at line 201
             const response = await fetch('/api/supabase/setup-tables?token=superwave-setup-database', {
               method: 'GET',
               headers: { 'Content-Type': 'application/json' },
@@ -199,15 +203,15 @@ export function useRealtimeUsers(isAdmin: boolean) {
             console.error('Error syncing after auth change:', error);
           }
         }
-      });
-      authUnsubscribe = () => subscription.unsubscribe();
-    } else {
+      }); // End of onAuthStateChange callback
+      authUnsubscribe = () => subscription?.unsubscribe(); // Use optional chaining
+    } else { // This else corresponds to the if (isAdmin) at line 43
       // Non-admin users just load their own profile once
       loadUsers();
     }
 
-    // Initial load
-    loadUsers();
+    // Initial load (moved outside the isAdmin block to ensure it always runs)
+    // loadUsers(); // Removed duplicate call, loadUsers is called inside the isAdmin branches or the else block
 
     // Clean up subscriptions
     return () => {
@@ -226,8 +230,8 @@ export function useRealtimeUsers(isAdmin: boolean) {
       }
     };
   // Pass loadUsers defined with useCallback as dependency
-  }, [isAdmin, loadUsers]);
+  }, [isAdmin, loadUsers]); // End of useEffect hook
 
-  // No need for duplicate definition, return the one defined with useCallback
+  // Return state and functions
   return { users, isLoading, setUsers, refresh: loadUsers };
-}
+} // End of useRealtimeUsers hook

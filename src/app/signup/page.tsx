@@ -14,85 +14,30 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { toast } from "sonner";
-import { supabaseAdmin, generateSecurePassword } from "../../lib/supabase-client";
+// Removed supabaseAdmin import
+import { generateSecurePassword } from "../../lib/supabase-client";
 
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   // Get token and email from URL parameters
   const token = searchParams.get('token');
   const email = searchParams.get('email');
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isVerifying, setIsVerifying] = useState<boolean>(true);
-  const [isInvitationValid, setIsInvitationValid] = useState<boolean>(false);
-  interface InvitationData {
-    email: string;
-    role: string;
-    token: string;
-    created_at: string;
-    created_by: string;
-  }
-  
-  const [invitationData, setInvitationData] = useState<InvitationData | null>(null);
-  
+  // Removed isVerifying and isInvitationValid states, verification happens on submit now
+
+  // We still need the role for the UI description, but we get it from the API response on error/success now
+  // or just display a generic message initially. Let's keep it simple for now.
+
   // Password setup
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const passwordRef = useRef<HTMLInputElement>(null);
-  
-  // Verify the invitation on component mount
-  useEffect(() => {
-    const verifyInvitation = async () => {
-      if (!token || !email) {
-        setIsVerifying(false);
-        router.push('/login');
-        return;
-      }
 
-      try {
-        // Verify invitation in database
-        const { data: invitations, error: verifyError } = await supabaseAdmin
-          .from('invitations')
-          .select('*')
-          .eq('token', token || '')
-          .eq('email', email)
-          .is('used_at', null)
-          .single();
-
-        if (verifyError || !invitations) {
-          console.error('Error verifying invitation:', verifyError);
-          toast.error('Invalid or expired invitation');
-          setIsInvitationValid(false);
-          router.push('/login');
-          return;
-        }
-
-        setIsInvitationValid(true);
-        // Construct a new object with the correct type
-        if (invitations) {
-          const newInvitationData: InvitationData = {
-            email: invitations.email as string, // Assert type
-            role: invitations.role as string, // Assert type
-            token: invitations.token as string, // Assert type
-            created_at: invitations.created_at as string, // Assert type
-            created_by: invitations.created_by as string, // Assert type
-          };
-          setInvitationData(newInvitationData);
-        }
-      } catch (error) {
-        console.error('Error verifying invitation:', error);
-        toast.error('Error verifying invitation');
-        router.push('/login');
-      } finally {
-        setIsVerifying(false);
-      }
-    };
-
-    verifyInvitation();
-  }, [token, email, router]);
+  // Removed useEffect for initial verification - this now happens server-side on submit
 
   // Copy to clipboard helper
   const copyToClipboard = async (text: string, message: string) => {
@@ -110,10 +55,10 @@ function SignupForm() {
     const newPassword = generateSecurePassword();
     setPassword(newPassword);
     setConfirmPassword(newPassword);
-    
+
     // Copy the new password to clipboard
     await copyToClipboard(newPassword, "Password generated and copied to clipboard!");
-    
+
     // Select the password field for visibility
     if (passwordRef.current) {
       passwordRef.current.select();
@@ -123,147 +68,78 @@ function SignupForm() {
   // Complete account setup
   const handleCompleteSignup = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
-    if (!email) {
-      toast.error('Email is required');
+    // Basic client-side checks
+    if (!token || !email) {
+      toast.error("Missing invitation details. Please use the link provided in your email.");
+      router.push('/login'); // Redirect if essential info is missing
       return;
     }
-
     if (!password) {
       toast.error('Password is required');
       return;
     }
-
     if (password !== confirmPassword) {
       toast.error('Passwords do not match');
       return;
     }
+    // Add password complexity check here if desired
 
     setIsLoading(true);
+    const toastId = toast.loading("Setting up your account...");
 
     try {
-      // Step 1: Verify invitation is still valid
-      const { data: invitation, error: inviteError } = await supabaseAdmin
-        .from('invitations')
-        .select('*')
-        .eq('token', token || '')
-        .eq('email', email)
-        .is('used_at', null)
-        .single();
-
-      if (inviteError || !invitation) {
-        console.error('[Signup] Invalid or expired invitation:', inviteError);
-        throw new Error('Invalid or expired invitation');
-      }
-
-      // Step 2: Create the auth user
-      // Create user with admin API to bypass email confirmation
-      const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        user_metadata: {
-          name: email.split('@')[0],
-          role: invitation.role
+      const response = await fetch('/api/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        email_confirm: true,
-        app_metadata: { provider: 'email' }
+        body: JSON.stringify({
+          token,
+          email,
+          password,
+        }),
       });
 
-      if (createError) {
-        console.error('[Signup] admin.createUser failed:', createError);
-        throw createError;
+      const result = await response.json();
+
+      if (!response.ok) {
+        // Use error message from API response if available
+        throw new Error(result.error || `Server responded with ${response.status}`);
       }
 
-      if (!createData.user) {
-        throw new Error('No user data returned from admin.createUser');
+      if (result.success) {
+        toast.success('Account set up successfully. Redirecting to login...', { id: toastId });
+        // Redirect to login after a short delay
+        setTimeout(() => router.push('/login'), 1500);
+      } else {
+        // Should be caught by !response.ok, but handle just in case
+        throw new Error(result.error || 'Signup failed for an unknown reason.');
       }
 
-      const userId = createData.user.id;
-
-      try {
-        // Step 3: Mark invitation as used first
-        const { error: markUsedError } = await supabaseAdmin
-          .from('invitations')
-          .update({ used_at: new Date().toISOString() })
-          .eq('token', token || '');
-
-        if (markUsedError) {
-          console.error('[Signup] Error marking invitation as used:', markUsedError);
-          throw markUsedError;
-        }
-
-        // Step 4: Create active user profile with confirmed status
-        const { error: profileError } = await supabaseAdmin
-          .from('user_profiles')
-          .insert({
-            id: userId,
-            email: email,
-            name: email.split('@')[0],
-            role: invitation.role,
-            status: 'active',
-            active: true,
-            confirmed_at: new Date().toISOString()
-          });
-
-        if (profileError) {
-          console.error('[Signup] Profile creation failed:', profileError);
-          throw profileError;
-        }
-
-        toast.success('Account set up successfully. Please log in.');
-        router.push('/login');
-
-      } catch (error) {
-        // Cleanup: Delete the auth user if any step failed
-        console.error('[Signup] Error during post-creation steps, cleaning up auth user:', userId);
-        await supabaseAdmin.auth.admin.deleteUser(userId);
-        throw error;
-      }
     } catch (error) {
-      console.error('Error setting up account:', error);
-      toast.error(error instanceof Error ? error.message : 'Error setting up account');
+      console.error('Error completing signup:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
+      // Provide specific feedback based on common errors
+      let displayError = errorMessage;
+      if (errorMessage.includes('Invalid or expired invitation')) {
+        displayError = 'This invitation link is invalid or has expired. Please request a new one.';
+        // Optionally redirect after showing the error
+         setTimeout(() => router.push('/login'), 3000);
+      } else if (errorMessage.includes('already registered')) {
+        displayError = 'This email address is already registered. Please log in instead.';
+         setTimeout(() => router.push('/login'), 3000);
+      } else if (errorMessage.includes('finalize account setup')) {
+         displayError = 'There was an issue finalizing your account setup. Please try again or contact support.';
+      }
+
+      toast.error(displayError, { id: toastId, duration: 5000 });
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (isVerifying) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <CardTitle>Verifying Invitation</CardTitle>
-            <CardDescription>Please wait while we verify your invitation...</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center py-6">
-            <div className="animate-pulse flex space-x-4">
-              <div className="rounded-full bg-slate-200 h-10 w-10"></div>
-              <div className="rounded-full bg-slate-200 h-10 w-10"></div>
-              <div className="rounded-full bg-slate-200 h-10 w-10"></div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!isInvitationValid) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <CardTitle>Invalid Invitation</CardTitle>
-            <CardDescription>The invitation link is invalid or has expired.</CardDescription>
-          </CardHeader>
-          <CardContent className="text-center py-6">
-            <p>Please contact your administrator for a new invitation.</p>
-          </CardContent>
-          <CardFooter className="flex justify-center">
-            <Button onClick={() => router.push('/login')}>Go to Login</Button>
-          </CardFooter>
-        </Card>
-      </div>
-    );
-  }
+  // Removed initial verification UI states. The form is shown directly.
+  // Error handling during submit will inform the user of invalid/expired links.
 
   return (
     <div className="h-screen flex items-center justify-center p-4">
@@ -271,9 +147,8 @@ function SignupForm() {
         <CardHeader>
           <CardTitle>Complete Your Account Setup</CardTitle>
           <CardDescription>
-            You&apos;ve been invited to join Superwave as a{" "}
-            <span className="font-semibold">{invitationData?.role || 'user'}</span>.
-            Set up your password to get started.
+            You've been invited to join Superwave.
+            Set up your password to complete your account setup.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -286,7 +161,7 @@ function SignupForm() {
               disabled
             />
           </div>
-          
+
           <div className="space-y-2">
             <div className="flex justify-between items-center">
               <Label htmlFor="password">Password</Label>
@@ -317,7 +192,7 @@ function SignupForm() {
               </Button>
             </div>
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="confirm-password">Confirm Password</Label>
             <Input
@@ -327,11 +202,11 @@ function SignupForm() {
               onChange={(e) => setConfirmPassword(e.target.value)}
             />
           </div>
-          
+
         </CardContent>
         <CardFooter>
-          <Button 
-            className="w-full" 
+          <Button
+            className="w-full"
             onClick={handleCompleteSignup}
             disabled={isLoading}
           >

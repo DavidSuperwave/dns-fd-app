@@ -5,7 +5,7 @@ import { CSVUpload } from "@/components/domains/csv-upload";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
 import { PlusCircle, ExternalLink, Loader2, AlertTriangle } from "lucide-react";
-import { createClient, supabaseAdmin } from "@/lib/supabase-client"; // Import createClient
+import { createClient } from "@/lib/supabase-client"; // Import createClient, removed supabaseAdmin
 import {
   Table,
   TableBody,
@@ -697,39 +697,43 @@ export default function DomainsPage() {
          }
       }
 
-      // --- Always attempt Supabase Deletion ---
-      console.log(`[handleDeleteDomain] Proceeding to delete domain ID ${selectedDomainForDeletion.id} from Supabase.`);
-      const { error: supabaseError } = await supabaseAdmin
-        .from('domains')
-        .delete()
-        .eq('id', selectedDomainForDeletion.id); // Delete by internal ID
+      // --- Call Server-Side API for Supabase Deletion ---
+      console.log(`[handleDeleteDomain] Calling API to delete domain ID ${selectedDomainForDeletion?.id} from Supabase.`);
+      const apiResponse = await fetch(`/api/domains/${selectedDomainForDeletion.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-      if (supabaseError) {
-        console.error('Failed to delete domain from Supabase:', supabaseError);
+      const apiResult = await apiResponse.json();
+
+      if (!apiResponse.ok) {
+        console.error(`[handleDeleteDomain] API deletion failed for ${selectedDomainForDeletion?.id}:`, apiResult.error);
         // Throw this error as it's critical for DB consistency
-        throw new Error(`Failed to delete domain from database: ${supabaseError.message}`);
+        throw new Error(`Failed to delete domain from database via API: ${apiResult.error || `Status ${apiResponse.status}`}`);
       }
-      console.log(`Successfully deleted domain ID ${selectedDomainForDeletion.id} from Supabase.`);
+      console.log(`[handleDeleteDomain] Successfully deleted domain ID ${selectedDomainForDeletion?.id} via API.`);
 
-      // After successful deletion, reload the current page data
+      // After successful deletion (or skipped deletion), reload the current page data
       // This will naturally handle pagination adjustments if the current page becomes empty
-      console.log(`[handleDeleteDomain] Domain deleted, reloading current page data.`);
+      console.log(`[handleDeleteDomain] Domain deletion process continuing, reloading current page data.`);
       await loadDomains({ useMockData: false });
 
 
-      // Remove domain assignments
-      console.log(`[handleDeleteDomain] Deleting assignments for domain ID ${selectedDomainForDeletion.id}.`);
+      // Remove domain assignments (using the regular client, assuming RLS allows it or it's handled by triggers/API)
+      console.log(`[handleDeleteDomain] Deleting assignments for domain ID ${selectedDomainForDeletion?.id}.`);
       const { error: assignmentError } = await supabase
         .from('domain_assignments')
         .delete()
-        .eq('domain_id', selectedDomainForDeletion.id); // Delete assignments by internal ID
+        .eq('domain_id', selectedDomainForDeletion?.id); // Delete assignments by internal ID
 
       if (assignmentError) {
         // Log but don't necessarily fail the whole operation
         console.error('Failed to delete domain assignments:', assignmentError);
         toast.warning(`Domain removed, but failed to clear assignments: ${assignmentError.message}`);
       } else {
-         console.log(`Successfully deleted assignments for domain ID ${selectedDomainForDeletion.id}.`);
+         console.log(`Successfully deleted assignments for domain ID ${selectedDomainForDeletion?.id}.`);
       }
 
       // Refresh assignments in UI state
@@ -737,11 +741,12 @@ export default function DomainsPage() {
 
       // Show appropriate success/warning message
       if (cloudflareDeletionAttempted && !cloudflareDeletionSuccessful) {
-         toast.warning(`Removed stale domain ${selectedDomainForDeletion.name} from the platform. It did not exist or was invalid in Cloudflare.`, {
+         toast.warning(`Removed stale domain ${selectedDomainForDeletion?.name} from the platform. It did not exist or was invalid in Cloudflare.`, {
             description: `Cloudflare error: ${cloudflareErrorMessage}`
          });
       } else {
-         toast.success(`Domain ${selectedDomainForDeletion.name} deleted successfully from Cloudflare and the platform.`);
+         // Adjust success message to reflect API deletion
+         toast.success(`Domain ${selectedDomainForDeletion?.name} deleted successfully from Cloudflare and the platform. Assignments removed.`);
       }
 
       // Close the dialog and reset
@@ -749,17 +754,17 @@ export default function DomainsPage() {
       setSelectedDomainForDeletion(null);
       setDeletionConfirmation('');
 
-    } catch (error) {
-      // Catch errors from Supabase deletion or unexpected errors
+    } catch (error) { // This catch block now correctly corresponds to the try block starting at 641
+      // Catch errors from Cloudflare deletion or unexpected errors during the process
       console.error('Error during the deletion process:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error during deletion';
       toast.error(`Failed to complete deletion: ${errorMessage}`, {
         description: 'The domain might be partially deleted. Please check Supabase and Cloudflare.'
       });
-    } finally {
+    } finally { // This finally block now correctly corresponds to the try block starting at 641
       setIsDeleting(false);
     }
-  };
+  }; // End of handleDeleteDomain
 
   // Format date from Cloudflare timestamp
   const formatDate = (dateString: string, includeTime: boolean = false) => {

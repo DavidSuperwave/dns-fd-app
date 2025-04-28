@@ -1,12 +1,13 @@
 import { createBrowserClient, createServerClient, type CookieOptions } from '@supabase/ssr';
-import { createClient as createStandardClient } from '@supabase/supabase-js'; // Import standard client
+import { createClient as createStandardClient, SupabaseClient } from '@supabase/supabase-js'; // Import standard client and SupabaseClient type
 // Remove unused cookies import here, it's used in layout.tsx
 import type { ReadonlyRequestCookies } from 'next/dist/server/web/spec-extension/adapters/request-cookies'; // Import type for cookies()
 
 // Ensure these environment variables are set!
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-export const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Service key should only be accessed server-side
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Add checks to ensure variables are loaded
 if (!supabaseUrl) {
@@ -15,10 +16,7 @@ if (!supabaseUrl) {
 if (!supabaseAnonKey) {
   throw new Error("Missing environment variable: NEXT_PUBLIC_SUPABASE_ANON_KEY");
 }
-if (!supabaseServiceKey) {
-  // Throw error as the admin client requires the service key
-  throw new Error("Missing environment variable: SUPABASE_SERVICE_ROLE_KEY");
-}
+// REMOVED CHECK for SUPABASE_SERVICE_ROLE_KEY - This should only happen server-side
 
 
 // --- Client Creation Functions ---
@@ -26,24 +24,31 @@ if (!supabaseServiceKey) {
 // Function to create a client for use in Client Components
 export const createClient = () => createBrowserClient(supabaseUrl, supabaseAnonKey);
 
-// createServerClientWrapper removed as client is now created directly in RootLayout
-// --- Admin Client (Singleton - OK as it uses service key) ---
-let supabaseAdminInstance: ReturnType<typeof createStandardClient> | null = null;
+// --- Admin Client (Server-Side ONLY) ---
+// Create the admin client instance ONLY if the service key is available (server-side)
+// Initialize as null or potentially throw if key is missing server-side where needed.
+let supabaseAdminInstance: SupabaseClient | null = null;
 
-export const supabaseAdmin = (() => {
-  if (!supabaseAdminInstance) {
-    supabaseAdminInstance = createStandardClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        // Explicitly disable auto-refreshing tokens for service role
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    });
-  }
-  return supabaseAdminInstance;
-})();
+if (supabaseServiceKey && typeof window === 'undefined') { // Ensure service key exists AND we are server-side
+  supabaseAdminInstance = createStandardClient(supabaseUrl!, supabaseServiceKey!, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
+} else if (!supabaseServiceKey && typeof window === 'undefined') {
+  // Optional: Log a warning if running server-side without the key
+  console.warn("SUPABASE_SERVICE_ROLE_KEY is not set. Supabase admin client cannot be created.");
+}
+
+// Export the instance. It will be null if the key is missing or if imported client-side.
+// Server-side code using this MUST handle the possibility of it being null if the key isn't set.
+export const supabaseAdmin = supabaseAdminInstance;
 
 // User management functions
+// !!! IMPORTANT: Many functions below previously used the removed `supabaseAdmin`.
+// They MUST be refactored to be called only from server-side contexts (API routes, Server Actions)
+// or modified to call server endpoints internally. Direct use from client components will fail.
 export interface UserProfile extends Record<string, unknown> {
   id: string;
   email: string;
@@ -62,14 +67,17 @@ export async function createInvitedUser(
   role: string = 'user',
   invitedBy?: string
 ): Promise<UserProfile | null> {
+  // !!! IMPORTANT: This function uses supabaseAdmin which was removed.
+  // This function MUST be called from a server-side context (API route, Server Action)
+  // where an admin client (using the service key) can be safely created and used.
+  throw new Error("createInvitedUser cannot be called from client-side code. Refactor to use a server-side endpoint.");
+  /* Original code:
   try {
-    // Generate a temporary password that will be changed on first login
     const tempPassword = generateSecurePassword(16);
-
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({ // <<< PROBLEM: supabaseAdmin removed
       email,
       password: tempPassword,
-      email_confirm: false, // Don't auto-confirm email for invited users
+      email_confirm: false,
       user_metadata: {
         name: email.split('@')[0],
         role: role,
@@ -116,7 +124,7 @@ export async function createInvitedUser(
     };
 
     // Insert into user_profiles table with upsert
-    const { error: profileError } = await supabaseAdmin
+    const { error: profileError } = await supabaseAdmin // <<< PROBLEM: supabaseAdmin removed
       .from('user_profiles')
       .upsert([profile as Record<string, unknown>], {
         onConflict: 'id',
@@ -142,7 +150,7 @@ export async function createInvitedUser(
 
       // Delete the auth user since profile creation failed
       try {
-        await supabaseAdmin.auth.admin.deleteUser(profile.id);
+        await supabaseAdmin.auth.admin.deleteUser(profile.id); // <<< PROBLEM: supabaseAdmin removed
       } catch (cleanupError) {
         console.error('Failed to cleanup auth user:', cleanupError);
       }
@@ -173,8 +181,9 @@ export async function createInvitedUser(
     };
 
     console.error('Error in createInvitedUser:', errorDetails);
-    throw error; // Re-throw the original error to preserve stack trace
+    throw error;
   }
+  */
 }
 
 // Domain management interfaces
@@ -188,6 +197,11 @@ export interface Domain {
 // Fetch all users from Supabase
 // Accepts a Supabase browser client instance
 export async function fetchUsers(client: ReturnType<typeof createClient>): Promise<UserProfile[]> {
+  // !!! IMPORTANT: This function uses supabaseAdmin which was removed for admin checks/fetches.
+  // Fetching all users requires admin privileges and must happen server-side.
+  // This function needs significant refactoring. It can only fetch the *current* user's profile safely now.
+  // Option 1: Call an API route from the client-side component that uses this.
+  // Option 2: If used in a Server Component, create/use a server client there.
   try {
     console.log('fetchUsers: Starting...');
 
@@ -208,7 +222,8 @@ export async function fetchUsers(client: ReturnType<typeof createClient>): Promi
 
     // If not admin, only show own profile (no need for && user now)
     if (!isAdmin) {
-      const { data: ownProfile, error: profileError } = await supabaseAdmin
+      // Use the provided client (safe for browser) to get the current user's profile
+      const { data: ownProfile, error: profileError } = await client
         .from('user_profiles')
         .select('*')
         .eq('id', user.id)
@@ -226,15 +241,19 @@ return [];
 
     }
 
+    // --- Admin-only logic removed ---
+    // Fetching all users requires admin privileges and must be done server-side.
+    // The code below is commented out as it relied on the removed `supabaseAdmin`.
+    /*
     // For admins, fetch both active users and pending invitations
     const [profilesResponse, invitationsResponse] = await Promise.all([
-      // Fetch user profiles
+      // Fetch user profiles - REQUIRES ADMIN CLIENT
       supabaseAdmin
         .from('user_profiles')
         .select('*')
         .order('created_at', { ascending: false }),
 
-      // Fetch pending invitations
+      // Fetch pending invitations - REQUIRES ADMIN CLIENT
       supabaseAdmin
         .from('invitations')
         .select('*')
@@ -246,6 +265,12 @@ return [];
       console.error('fetchUsers: Error fetching profiles:', profilesResponse.error);
       throw profilesResponse.error;
     }
+     if (invitationsResponse.error) { // Check added for completeness
+       console.error('fetchUsers: Error fetching invitations:', invitationsResponse.error);
+       // Decide how to handle this - maybe return only profiles?
+       // For now, let's throw to indicate partial failure
+       throw invitationsResponse.error;
+     }
 
     const activeUsers = profilesResponse.data || [];
     const pendingInvites = (invitationsResponse.data || []).map(invite => ({
@@ -269,17 +294,25 @@ return [];
         created_at: invite.created_at,
       }) as UserProfile),
     ];
-    
+    */
+   // If execution reaches here as admin, it means the admin-specific logic
+   // needs to be implemented server-side. Return empty for now.
+   console.warn("fetchUsers: Admin user detected, but fetching all users requires a server-side implementation.");
+   return [];
 
   } catch (error) {
     console.error('Error in fetchUsers:', error);
-    throw error;
+    throw error; // Re-throw original error
   }
 }
 
 // Create a new user in Supabase
 export async function createUser(email: string, password: string, userData: Partial<UserProfile>): Promise<UserProfile | null> {
-  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+  // !!! IMPORTANT: This function uses supabaseAdmin which was removed.
+  // This function MUST be called from a server-side context.
+  throw new Error("createUser cannot be called from client-side code. Refactor to use a server-side endpoint.");
+  /* Original code:
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({ // <<< PROBLEM: supabaseAdmin removed
     email,
     password,
     email_confirm: true,
@@ -306,7 +339,7 @@ export async function createUser(email: string, password: string, userData: Part
   };
 
   // Insert into user_profiles table
-  const { error: profileError } = await supabaseAdmin
+  const { error: profileError } = await supabaseAdmin // <<< PROBLEM: supabaseAdmin removed
     .from('user_profiles')
     .insert([profile]);
 
@@ -316,11 +349,16 @@ export async function createUser(email: string, password: string, userData: Part
   }
 
   return profile;
+  */
 }
 
 // Update a user in Supabase
 export async function updateUser(id: string, userData: Partial<UserProfile>): Promise<boolean> {
-  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, {
+  // !!! IMPORTANT: This function uses supabaseAdmin which was removed.
+  // This function MUST be called from a server-side context.
+  throw new Error("updateUser cannot be called from client-side code. Refactor to use a server-side endpoint.");
+  /* Original code:
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, { // <<< PROBLEM: supabaseAdmin removed
     user_metadata: {
       name: userData.name,
       role: userData.role
@@ -334,16 +372,19 @@ export async function updateUser(id: string, userData: Partial<UserProfile>): Pr
   }
 
   return true;
+  */
 }
 
 // Delete a user in Supabase
 export async function deleteUser(id: string): Promise<boolean> {
+  // !!! IMPORTANT: This function uses supabaseAdmin which was removed.
+  // This function MUST be called from a server-side context.
+  throw new Error("deleteUser cannot be called from client-side code. Refactor to use a server-side endpoint.");
+  /* Original code:
   try {
-    // First check if the user exists in auth
-    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(id);
-    
-    // Delete from user_profiles first (this will cascade delete related records)
-    const { error: profileError } = await supabaseAdmin
+    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(id); // <<< PROBLEM: supabaseAdmin removed
+
+    const { error: profileError } = await supabaseAdmin // <<< PROBLEM: supabaseAdmin removed
       .from('user_profiles')
       .delete()
       .eq('id', id);
@@ -353,9 +394,8 @@ export async function deleteUser(id: string): Promise<boolean> {
       throw profileError;
     }
 
-    // If user exists in auth, delete them
     if (!userError && userData?.user) {
-      const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
+      const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id); // <<< PROBLEM: supabaseAdmin removed
       if (authError) {
         console.error('Error deleting auth user:', authError);
         throw authError;
@@ -367,12 +407,16 @@ export async function deleteUser(id: string): Promise<boolean> {
     console.error('Error in deleteUser:', error);
     return false;
   }
+  */
 }
 
 // Activate or deactivate a user
 export async function toggleUserStatus(id: string, active: boolean): Promise<boolean> {
-  // Update user metadata to store their active status
-  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, {
+  // !!! IMPORTANT: This function uses supabaseAdmin which was removed.
+  // This function MUST be called from a server-side context.
+  throw new Error("toggleUserStatus cannot be called from client-side code. Refactor to use a server-side endpoint.");
+  /* Original code:
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, { // <<< PROBLEM: supabaseAdmin removed
     user_metadata: {
       is_banned: !active
     }
@@ -384,11 +428,16 @@ export async function toggleUserStatus(id: string, active: boolean): Promise<boo
   }
 
   return true;
+  */
 }
 
 // Change user password
 export async function changePassword(id: string, newPassword: string): Promise<boolean> {
-  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, {
+  // !!! IMPORTANT: This function uses supabaseAdmin which was removed.
+  // This function MUST be called from a server-side context.
+  throw new Error("changePassword cannot be called from client-side code. Refactor to use a server-side endpoint.");
+  /* Original code:
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, { // <<< PROBLEM: supabaseAdmin removed
     password: newPassword
   });
 
@@ -397,27 +446,28 @@ export async function changePassword(id: string, newPassword: string): Promise<b
     return false;
   }
   return true;
+  */
 }
 
 // Domain management functions
 
 // Assign a domain to a user
 export async function assignDomainToUser(userId: string, domainId: string): Promise<boolean> { // Removed unused domainName
-  // Get current user
-  const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
+  // !!! IMPORTANT: This function uses supabaseAdmin which was removed.
+  // This function MUST be called from a server-side context.
+  throw new Error("assignDomainToUser cannot be called from client-side code. Refactor to use a server-side endpoint.");
+  /* Original code:
+  const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId); // <<< PROBLEM: supabaseAdmin removed
 
   if (userError || !userData.user) {
     console.error('Error fetching user for domain assignment:', userError);
     return false;
   }
 
-  // Get current domain assignments
   const currentDomains = userData.user.user_metadata?.domains || [];
 
-  // Add domain if not already assigned
   if (!currentDomains.includes(domainId)) {
-    // Update user metadata
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { // <<< PROBLEM: supabaseAdmin removed
       user_metadata: {
         ...userData.user.user_metadata,
         domains: [...currentDomains, domainId],
@@ -432,26 +482,27 @@ export async function assignDomainToUser(userId: string, domainId: string): Prom
     return true;
   }
 
-  return true; // Domain was already assigned
+  return true;
+  */
 }
 
 // Remove a domain assignment from a user
 export async function removeDomainFromUser(userId: string, domainId: string): Promise<boolean> {
-  // Get current user
-  const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
+  // !!! IMPORTANT: This function uses supabaseAdmin which was removed.
+  // This function MUST be called from a server-side context.
+  throw new Error("removeDomainFromUser cannot be called from client-side code. Refactor to use a server-side endpoint.");
+  /* Original code:
+  const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId); // <<< PROBLEM: supabaseAdmin removed
 
   if (userError || !userData.user) {
     console.error('Error fetching user for domain removal:', userError);
     return false;
   }
 
-  // Get current domain assignments
   const currentDomains = userData.user.user_metadata?.domains || [];
 
-  // Remove domain if assigned
   if (currentDomains.includes(domainId)) {
-    // Update user metadata
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { // <<< PROBLEM: supabaseAdmin removed
       user_metadata: {
         ...userData.user.user_metadata,
         domains: currentDomains.filter((id: string) => id !== domainId),
@@ -466,7 +517,8 @@ export async function removeDomainFromUser(userId: string, domainId: string): Pr
     return true;
   }
 
-  return true; // Domain was not assigned
+  return true;
+  */
 }
 
 // Delete a domain from Cloudflare and remove all assignments
@@ -475,13 +527,15 @@ export async function deleteDomainAndAssignments(
   domainId: string,
   client: ReturnType<typeof createClient> // Use browser client type
 ): Promise<boolean> {
-  // First, delete the domain from Cloudflare
+  // !!! IMPORTANT: This function uses supabaseAdmin indirectly via removeDomainFromUser and fetchUsers.
+  // This function MUST be called from a server-side context or refactored
+  // to call API endpoints for the user/domain removal parts.
+  throw new Error("deleteDomainAndAssignments cannot be called from client-side code. Refactor required.");
+  /* Original code:
   try {
     const response = await fetch(`/api/cloudflare/domains/${domainId}`, {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
 
     if (!response.ok) {
@@ -490,11 +544,12 @@ export async function deleteDomainAndAssignments(
     }
 
     // Now, fetch all users using the provided client to remove domain assignments
-    const users = await fetchUsers(client);
+    const users = await fetchUsers(client); // <<< PROBLEM: fetchUsers needs admin client
 
     // For each user with this domain assigned
     for (const user of users) {
       if (user.domains?.includes(domainId)) {
+        // This call will fail as removeDomainFromUser requires admin client
         await removeDomainFromUser(user.id, domainId);
       }
     }
@@ -504,16 +559,20 @@ export async function deleteDomainAndAssignments(
     console.error('Error deleting domain:', error);
     return false;
   }
+  */
 }
 
 // Get all domains assigned to a user
 export async function getAssignedDomains(userId: string): Promise<Domain[]> {
-  // Get current user
-  const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
+  // !!! IMPORTANT: This function uses supabaseAdmin which was removed.
+  // This function MUST be called from a server-side context.
+  throw new Error("getAssignedDomains cannot be called from client-side code. Refactor to use a server-side endpoint.");
+  /* Original code:
+  const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId); // <<< PROBLEM: supabaseAdmin removed
 
   if (userError || !userData.user) {
     console.error('Error fetching user for domain list:', userError);
-    return [];
+    return []; // Return empty array on error
   }
 
   // Get domain IDs from metadata
@@ -538,6 +597,8 @@ export async function getAssignedDomains(userId: string): Promise<Domain[]> {
     console.error('Error fetching assigned domains:', error);
     return [];
   }
+  */
+  return []; // Return empty array as placeholder
 }
 
 // Generate a secure random password
