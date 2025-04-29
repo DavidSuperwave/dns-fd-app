@@ -4,11 +4,11 @@ import { NextResponse } from 'next/server';
 const CLOUDFLARE_API_URL = 'https://api.cloudflare.com/client/v4';
 
 // Cloudflare authentication credentials - using hardcoded values for consistency
-const CLOUDFLARE_API_TOKEN = '3zYP5-L3oxluS5N3VNJNH7UXxh9NbxbyU0psh8uG';
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 
-// Log that we're using hardcoded values
-console.log('[Cloudflare API DNS] Using hardcoded API Token for consistency');
-
+if (!CLOUDFLARE_API_TOKEN) {
+  throw new Error('CLOUDFLARE_API_TOKEN is not defined in the environment variables.');
+}
 // Helper function to get authentication headers - using API Token authentication
 const getAuthHeaders = (): HeadersInit => {
   // Create API Token authentication headers

@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 
 // API configuration
 const CLOUDFLARE_API_URL = 'https://api.cloudflare.com/client/v4';
-const CLOUDFLARE_API_TOKEN = '3zYP5-L3oxluS5N3VNJNH7UXxh9NbxbyU0psh8uG';
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN; // Use environment variable for token
 // const CLOUDFLARE_ACCOUNT_ID = '4dc0ca4b102ca90ce263dbec31af4a1f'; // No longer needed for this direct zone path
 
 

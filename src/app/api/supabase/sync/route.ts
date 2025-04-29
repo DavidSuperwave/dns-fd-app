@@ -17,7 +17,7 @@ interface ListUsersResponse {
 // Supabase client with admin privileges
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zfwaqmkqqykfptczwqwo.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpmd2FxbWtxcXlrZnB0Y3p3cXdvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NTQxMjQ0NiwiZXhwIjoyMDYwOTg4NDQ2fQ._b4muH3igc6CwPxTp7uPM54FWSCZkK1maSSbF7dAlQM',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY is not defined'); })(),
   {
     auth: {
       autoRefreshToken: false,
@@ -32,7 +32,7 @@ export async function POST() { // Remove unused 'request' parameter
     // Verify current user is authenticated
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zfwaqmkqqykfptczwqwo.supabase.co',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpmd2FxbWtxcXlrZnB0Y3p3cXdvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU0MTI0NDYsImV4cCI6MjA2MDk4ODQ0Nn0.cXzZsBxBe1j-lHQUccGLVbHdWxqS-TJ447DJlf7NL2E'
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || (() => { throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is not defined'); })(),
     );
     
     const { data: sessionData } = await supabase.auth.getSession();

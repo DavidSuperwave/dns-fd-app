@@ -3,7 +3,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 // Create a Supabase client with service role key
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zfwaqmkqqykfptczwqwo.supabase.co';
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpmd2FxbWtxcXlrZnB0Y3p3cXdvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NTQxMjQ0NiwiZXhwIjoyMDYwOTg4NDQ2fQ._b4muH3igc6CwPxTp7uPM54FWSCZkK1maSSbF7dAlQM';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 console.log('Using Supabase service key to run diagnostics');
 const supabase = createClient(supabaseUrl, supabaseServiceKey);

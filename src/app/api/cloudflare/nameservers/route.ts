@@ -6,8 +6,8 @@ export const dynamic = 'force-dynamic';
 
 // API configuration
 const CLOUDFLARE_API_URL = 'https://api.cloudflare.com/client/v4';
-const CLOUDFLARE_API_TOKEN = '3zYP5-L3oxluS5N3VNJNH7UXxh9NbxbyU0psh8uG';
-const CLOUDFLARE_ACCOUNT_ID = '4dc0ca4b102ca90ce263dbec31af4a1f'; // Add missing Account ID
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN; // Ensure token is set
+const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID; // Add missing Account ID
 
 export async function GET(request: NextRequest) {
   try {
