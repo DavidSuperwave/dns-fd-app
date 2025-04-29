@@ -204,16 +204,19 @@ export async function updateDnsRecord(
  */
 export async function deleteDnsRecord(domainId: string, recordId: string) {
   try {
-    const response = await fetch(`${API_BASE}/dns-records/${recordId}?zoneId=${domainId}`, {
+    const response = await fetch(`/api/cloudflare/dns-records/${recordId}?zoneId=${domainId}`, {
       method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json'
+      }
     });
 
-    const data = await response.json();
-
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to delete DNS record');
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || `Failed to delete DNS record: ${response.statusText}`);
     }
 
+    const data = await response.json();
     return data;
   } catch (error) {
     console.error('Error deleting DNS record:', error);
