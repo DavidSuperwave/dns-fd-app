@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react'; // Removed unused useEffect
-import { useRealtimeUsers } from '@/hooks/useRealtimeUsers';
+import { useState, useEffect } from 'react'; // Added useEffect back
+// Removed useRealtimeUsers import
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Button } from '@/components/ui/button';
@@ -44,11 +44,14 @@ import {
 
 function UsersPage() {
   const router = useRouter();
-  const { isAdmin, user } = useAuth();
-  const { users, isLoading, refresh } = useRealtimeUsers(isAdmin);
-  const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+  const { isAdmin, user, session } = useAuth(); // Get session for token
+  // State for users fetched from API
+  const [usersWithDomains, setUsersWithDomains] = useState<any[]>([]); // Use 'any' for now, define a proper type later
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [userToDelete, setUserToDelete] = useState<any | null>(null); // Use 'any' for now
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  
 
   const [invitation, setInvitation] = useState({
     email: "",
@@ -59,6 +62,46 @@ function UsersPage() {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSending, setSending] = useState(false);
+
+  // Function to fetch users from the new API
+  const fetchUsersWithDomains = async () => {
+    if (!isAdmin || !session?.access_token) {
+      setIsLoading(false);
+      setError(isAdmin ? 'Session token not available.' : 'Access denied.');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/admin/users-with-domains', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to fetch users: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setUsersWithDomains(data);
+    } catch (err) {
+      console.error("Error fetching users with domains:", err);
+      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      setUsersWithDomains([]); // Clear data on error
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch data on component mount and when admin status changes
+  useEffect(() => {
+    fetchUsersWithDomains();
+  }, [isAdmin, session?.access_token]); // Re-fetch if session changes
 
   const handleSendInvitation = async () => {
     if (!invitation.email) {
@@ -71,13 +114,13 @@ function UsersPage() {
       toast.error("Please enter a valid email address");
       return;
     }
-    
+
     setSending(true);
     try {
       if (!isAdmin) {
         throw new Error('Only administrators can invite users');
       }
-      
+
       // Send invitation through the API using service key
       const response = await fetch('/api/invitations', {
         method: 'POST',
@@ -109,7 +152,7 @@ function UsersPage() {
         status: "pending"
       });
       setIsDialogOpen(false);
-      
+
       toast.success(
         `Invited ${invitation.email} to join the platform as ${formatRole(invitation.role)}`,
         {
@@ -124,12 +167,12 @@ function UsersPage() {
         }
       );
 
-      // Refresh the users list immediately
-      await refresh();
+      // Refresh the users list immediately by calling the fetch function
+      await fetchUsersWithDomains();
     } catch (error) {
       // Log raw error first
       console.error('Raw invitation error:', error);
-      
+
       // Get error details
       const errorDetails = {
         message: error instanceof Error ? error.message : 'Unknown error',
@@ -139,16 +182,16 @@ function UsersPage() {
         role: invitation.role,
         context: 'handleSendInvitation'
       };
-      
+
       console.error('Error sending invitation:', errorDetails);
-      
+
       // Extract the most useful error message
       let errorMessage = 'Failed to send invitation';
       let errorDescription = 'Please try again or contact support if the issue persists.';
 
       // Get the most descriptive error message
       errorMessage = error instanceof Error ? error.message : 'Failed to send invitation';
-      
+
       // Check for known error patterns
       if (errorMessage.toLowerCase().includes('already exists')) {
         errorDescription = 'This email is already registered.';
@@ -157,7 +200,7 @@ function UsersPage() {
       } else if (errorMessage.toLowerCase().includes('profile')) {
         errorDescription = 'There was an issue creating the user profile. Please try again.';
       }
-      
+
       toast.error(errorMessage, {
         duration: 5000,
         description: errorDescription
@@ -168,9 +211,10 @@ function UsersPage() {
   };
 
   const handleToggleUserStatus = async (id: string) => {
-    const user = users.find((u) => u.id === id);
+    // Find user in the new state variable
+    const user = usersWithDomains.find((u) => u.id === id);
     if (!user) return;
-    
+
     const newActiveState = !user.active;
     const action = newActiveState ? "activate" : "deactivate";
     const toastId = toast.loading(`${action === 'activate' ? 'Activating' : 'Deactivating'} user ${user.email}...`);
@@ -193,8 +237,8 @@ function UsersPage() {
       if (result.success) {
         // Real-time should update, but show success toast immediately
         toast.success(`User ${user.email} ${action}d successfully.`, { id: toastId });
-        // Optionally trigger a manual refresh if real-time proves unreliable
-        // await refresh();
+        // Refresh data after successful toggle
+        await fetchUsersWithDomains();
       } else {
          throw new Error('API call succeeded but action failed.');
       }
@@ -206,9 +250,10 @@ function UsersPage() {
   };
 
   const handleDeleteUser = async (id: string) => {
-    const userToDelete = users.find((user) => user.id === id);
+    // Find user in the new state variable
+    const userToDelete = usersWithDomains.find((user) => user.id === id);
     if (!userToDelete) return;
-    
+
     const toastId = toast.loading(`Deleting user ${userToDelete.email}...`);
     try {
       const response = await fetch(`/api/users/${id}`, {
@@ -227,9 +272,8 @@ function UsersPage() {
       const result = await response.json();
       if (result.success) {
         toast.success(`User ${userToDelete.email} deleted successfully.`, { id: toastId });
-        // Real-time should handle removal, but refresh might be needed if not immediate
-        await refresh(); // Use the hook's refresh first
-        // router.refresh(); // Use as fallback if needed
+        // Refresh data after successful delete
+        await fetchUsersWithDomains();
       } else {
         throw new Error('API call succeeded but deletion failed.');
       }
@@ -241,7 +285,8 @@ function UsersPage() {
   };
 
   const handleRefreshUserStatus = async (userId: string) => {
-    const userToRefresh = users.find((user) => user.id === userId);
+    // Find user in the new state variable
+    const userToRefresh = usersWithDomains.find((user) => user.id === userId);
     if (!userToRefresh) return;
 
     const toastId = toast.loading(`Refreshing status for ${userToRefresh.email}...`);
@@ -264,8 +309,8 @@ function UsersPage() {
       toast.success(`Status refreshed for ${userToRefresh.email}. New status: ${result.newStatus}`, {
         id: toastId,
       });
-      // Refresh the user list data using the hook's refresh function
-      await refresh(); 
+      // Refresh the user list data by calling the fetch function
+      await fetchUsersWithDomains();
     } catch (error) {
       console.error('Error refreshing user status:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -289,7 +334,7 @@ function UsersPage() {
         return "bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium";
     }
   };
-  
+
   const formatRole = (role: string | undefined): string => {
     if (!role) return 'User';
     return role.charAt(0).toUpperCase() + role.slice(1);
@@ -311,7 +356,7 @@ function UsersPage() {
               {/* Removed manual sync button since we now have real-time updates */}
             </>
           )}
-          
+
           {isAdmin ? (
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
@@ -416,83 +461,32 @@ function UsersPage() {
               <TableHead className="w-[150px]">Role</TableHead>
               <TableHead className="w-[150px]">Status</TableHead>
               <TableHead className="w-[200px]">Created</TableHead>
+              <TableHead>Assigned Domains</TableHead> {/* New Column */}
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading && !users.length ? (
+            {isLoading ? ( // Check loading state first
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-4">
+                <TableCell colSpan={6} className="text-center py-4"> {/* Updated colSpan */}
                   Loading users...
                 </TableCell>
               </TableRow>
-            ) : users.length === 0 ? (
+            ) : error ? ( // Display error if fetch failed
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-4">
+                <TableCell colSpan={6} className="text-center py-4 text-red-600"> {/* Updated colSpan */}
+                  Error loading users: {error}
+                </TableCell>
+              </TableRow>
+            ) : usersWithDomains.length === 0 ? ( // Check if array is empty after loading
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-4"> {/* Updated colSpan */}
                   No users found.
                 </TableCell>
               </TableRow>
-            ) : users.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>
-                  <span className={getRoleBadgeStyle(user.role)}>
-                    {formatRole(user.role)}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <span
-                    className={
-                      user.status === "pending"
-                        ? "bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs font-medium"
-                        : user.active
-                        ? "bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium"
-                        : "bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-xs font-medium"
-                    }
-                  >
-                    {user.status === "pending" ? "Pending" : user.active ? "Active" : "Inactive"}
-                  </span>
-                </TableCell>
-                <TableCell>{user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRefreshUserStatus(user.id)}
-                      // Add loading state later
-                    >
-                      Refresh Status
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => router.push(`/users/${user.id}`)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleToggleUserStatus(user.id)}
-                    >
-                      {user.active ? "Deactivate" : "Activate"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setUserToDelete(user);
-                        setIsDeleteDialogOpen(true);
-                      }}
-                      className="text-red-600 hover:text-red-900 hover:bg-red-100"
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
+            ) : usersWithDomains.map((user) => ( // Map over the new state variable
+              // Ensure no extra whitespace between TableCell elements
+              <TableRow key={user.id}><TableCell>{user.email}</TableCell><TableCell><span className={getRoleBadgeStyle(user.role)}>{formatRole(user.role)}</span></TableCell><TableCell><span className={user.status === "pending" ? "bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs font-medium" : user.active ? "bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium" : "bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-xs font-medium"}>{user.status === "pending" ? "Pending" : user.active ? "Active" : "Inactive"}</span></TableCell><TableCell>{user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}</TableCell><TableCell>{/* Cell for Assigned Domains */ user.domain_names && user.domain_names.length > 0 ? user.domain_names.join(', ') : <span className="text-xs text-gray-500">None</span>}</TableCell><TableCell className="text-right"><div className="flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => handleRefreshUserStatus(user.id)}>Refresh Status</Button><Button variant="ghost" size="sm" onClick={() => router.push(`/users/${user.id}`)}>Edit</Button><Button variant="ghost" size="sm" onClick={() => handleToggleUserStatus(user.id)}>{user.active ? "Deactivate" : "Activate"}</Button><Button variant="ghost" size="sm" onClick={() => { setUserToDelete(user); setIsDeleteDialogOpen(true); }} className="text-red-600 hover:text-red-900 hover:bg-red-100">Delete</Button></div></TableCell></TableRow>
             ))}
           </TableBody>
         </Table>
