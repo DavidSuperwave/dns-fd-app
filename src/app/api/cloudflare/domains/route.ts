@@ -14,8 +14,8 @@ interface CloudflareDomain {
 
 // API configuration
 const CLOUDFLARE_API_URL = 'https://api.cloudflare.com/client/v4';
-const CLOUDFLARE_API_TOKEN = '3zYP5-L3oxluS5N3VNJNH7UXxh9NbxbyU0psh8uG';
-const CLOUDFLARE_ACCOUNT_ID = '4dc0ca4b102ca90ce263dbec31af4a1f';
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
 
 // Client-side friendly implementation that avoids server-only features
 export async function GET(request: NextRequest) {

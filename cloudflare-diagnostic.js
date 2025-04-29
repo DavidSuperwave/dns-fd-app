@@ -5,13 +5,13 @@ const https = require('https');
 const fs = require('fs');
 
 // Configuration
-const CLOUDFLARE_ACCOUNT_ID = '4dc0ca4b102ca90ce263dbec31af4a1f'; // User provided correct account ID
+const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID; // User provided correct account ID
 let CLOUDFLARE_EMAIL;
 let CLOUDFLARE_API_KEY;
 
 // Using hardcoded credentials as specified by user
 CLOUDFLARE_EMAIL = 'dns@superwave.ai';
-CLOUDFLARE_API_TOKEN = '3zYP5-L3oxluS5N3VNJNH7UXxh9NbxbyU0psh8uG';
+CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN; // User provided correct API token
 
 console.log(`Using API Token authentication for diagnostic tests`);
 

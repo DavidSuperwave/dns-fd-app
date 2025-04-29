@@ -1,16 +1,17 @@
 import { NextResponse } from 'next/server';
 
 // Cloudflare authentication credentials - using hardcoded values for consistency
-const CLOUDFLARE_API_TOKEN = '3zYP5-L3oxluS5N3VNJNH7UXxh9NbxbyU0psh8uG';
-
-// Log that we're using hardcoded values
-console.log('[Cloudflare Redirects API] Using hardcoded API Token for consistency');
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 
 // Cloudflare API base URL
 const CLOUDFLARE_API_URL = 'https://api.cloudflare.com/client/v4';
 
 // Helper function to get authentication headers using Bearer token auth
 const getAuthHeaders = (): HeadersInit => {
+  if (!CLOUDFLARE_API_TOKEN) {
+    throw new Error('[Cloudflare Redirects API] CLOUDFLARE_API_TOKEN is not defined');
+  }
+
   // Use API Token authentication with Bearer format
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
