@@ -52,7 +52,7 @@ export const supabaseAdmin = supabaseAdminInstance;
 export interface UserProfile extends Record<string, unknown> {
   id: string;
   email: string;
-  full_name?: string | null; // Changed from name to full_name and allow null
+  name?: string;
   role?: 'admin' | 'user' | 'guest';
   active?: boolean;
   status?: 'pending' | 'active' | 'inactive';
