@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { supabaseAdmin } from '@/lib/supabase-client'; // Import the admin client
 
 // Function to create Supabase client within middleware/server components
 const createClient = (request: NextRequest) => {
@@ -74,12 +75,41 @@ export async function middleware(request: NextRequest) {
     error: sessionError // Capture potential error during getSession
   } = await supabase.auth.getSession();
 
+  let userIsActive = false; // Default to inactive
+
   if (sessionError) {
     console.error(`[Middleware] Error getting session for ${pathname}:`, sessionError);
-    // Allow request to proceed but log error, maybe return error response?
-    // For now, let's just log and continue to see if it causes the ISE later
-  } else {
-    console.log(`[Middleware] Session found for ${pathname}:`, !!session);
+    // Treat session error as potentially inactive/unauthenticated
+  } else if (session?.user) {
+    console.log(`[Middleware] Session found for user ${session.user.id}. Checking profile status...`);
+    // If session exists, check the user_profiles table for active status
+    try {
+      // Use supabaseAdmin to bypass RLS for this check
+      if (!supabaseAdmin) {
+          console.error('[Middleware] Supabase admin client is not available for profile check.');
+          // Keep userIsActive false if admin client fails
+      } else {
+          const { data: profile, error: profileError } = await supabaseAdmin
+            .from('user_profiles')
+            .select('active')
+            .eq('id', session.user.id)
+            .single(); // Use single() as profile should be unique
+
+          if (profileError) {
+            console.error(`[Middleware] Error fetching profile for user ${session.user.id}:`, profileError);
+            // Treat profile fetch error as inactive
+          } else if (profile && profile.active === true) {
+            console.log(`[Middleware] User ${session.user.id} profile is active.`);
+            userIsActive = true;
+          } else {
+            console.warn(`[Middleware] User ${session.user.id} profile not found or is inactive (active: ${profile?.active}).`);
+          }
+      } // End of the 'else' block for supabaseAdmin check
+    } catch (e) { // Catch block for the try starting above
+        console.error(`[Middleware] Exception fetching profile for user ${session.user.id}:`, e);
+    }
+  } else { // Else block for 'if (session?.user)'
+    console.log(`[Middleware] No active session found for path: ${pathname}`);
   }
 
   // Define public paths that don't require authentication
@@ -87,7 +117,7 @@ export async function middleware(request: NextRequest) {
 
   // Define authenticated paths
   // Adjust this list based on your application structure
-  const authenticatedPaths = ['/domains', '/settings', '/users', '/dns-records']; 
+  const authenticatedPaths = ['/domains', '/settings', '/users', '/dns-records'];
 
   // --- Manual Path Handling ---
   if (pathname === '/manual') {
@@ -99,21 +129,22 @@ export async function middleware(request: NextRequest) {
   const isPublicPath = publicPaths.some(path => pathname.startsWith(path));
   const requiresAuth = authenticatedPaths.some(path => pathname.startsWith(path)) || pathname === '/'; // Protect root path too
 
-  // If trying to access a protected route without a session, redirect to login
-  if (requiresAuth && !session) {
-    console.log(`[Middleware] No session & requiresAuth=true, redirecting from ${pathname} to /login`);
+  // If trying to access a protected route WITHOUT a valid session OR an active profile, redirect to login
+  if (requiresAuth && !userIsActive) {
+    console.log(`[Middleware] Access denied (requiresAuth=${requiresAuth}, userIsActive=${userIsActive}). Redirecting from ${pathname} to /login`);
+    // Clear potentially invalid cookies if user is inactive but session exists? Maybe not necessary here.
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // If trying to access a public route (like login/signup) with an active session AND no session error, redirect to domains
-  if (isPublicPath && session && !sessionError) {
-     console.log(`[Middleware] Active session & no error & isPublicPath=true, redirecting from ${pathname} to /domains`);
+  // If trying to access a public route (like login/signup) WITH an active session/profile, redirect to domains
+  if (isPublicPath && userIsActive) {
+     console.log(`[Middleware] Active session/profile & isPublicPath=true, redirecting from ${pathname} to /domains`);
      return NextResponse.redirect(new URL('/domains', request.url));
   }
 
   // Allow the request to proceed for all other cases
-  // (e.g., accessing public paths without session, accessing protected paths with session, API routes)
-  console.log(`[Middleware] Allowing request to proceed for path: ${pathname}`);
+  // (e.g., accessing public paths without session, accessing protected paths with active session/profile, API routes)
+  console.log(`[Middleware] Allowing request to proceed for path: ${pathname} (userIsActive: ${userIsActive})`);
   return response; // Use the response object created by createClient
 }
 
