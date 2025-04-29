@@ -12,6 +12,7 @@ import { CsvValidationDialog } from './csv-validation-dialog';
 interface CSVFile {
   name: string;
   downloadUrl: string;
+  createdAt: string | null; // Add timestamp
 }
 
 interface CSVUploadProps {
@@ -44,7 +45,9 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       // Use regular client - This might fail if RLS restricts listing
       const { data, error } = await supabase.storage
         .from('domain-csv-files')
-        .list(domainId);
+        .list(domainId, {
+          // Optionally add limits or offsets if needed later
+        });
 
       if (error) {
         console.error('[loadFiles] Error listing files:', error); // Added log
@@ -59,9 +62,11 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       );
 
       console.log('[loadFiles] Generating signed URLs for', csvFiles.length, 'files...'); // Added log
-      const filesWithUrls = await Promise.all(csvFiles.map(async (file) => {
+      const filesWithUrlsAndTimestamps = await Promise.all(csvFiles.map(async (file) => {
         const filePath = `${domainId}/${file.name}`;
-        
+        let downloadUrl = '#'; // Default placeholder
+        let createdAt = file.created_at || null; // Get timestamp from list metadata
+
         // --- Generate Signed URL via API ---
         try {
           const response = await fetch('/api/storage/signed-url', {
@@ -70,28 +75,29 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
             body: JSON.stringify({ filePath })
           });
           const result = await response.json();
-          if (!response.ok || !result.success || !result.signedUrl) {
+          if (response.ok && result.success && result.signedUrl) {
+            downloadUrl = result.signedUrl; // Use URL from API
+            console.log(`[loadFiles] Signed URL generated via API for: ${filePath}`);
+          } else {
             console.error(`Error getting signed URL for ${filePath}:`, result.error || `Status ${response.status}`);
-            // Return with placeholder on error
-            return { name: file.name, downloadUrl: '#' };
           }
-          console.log(`[loadFiles] Signed URL generated via API for: ${filePath}`);
-          return {
-            name: file.name,
-            downloadUrl: result.signedUrl // Use URL from API
-          };
         } catch (apiError) {
            console.error(`[loadFiles] API call failed for signed URL ${filePath}:`, apiError);
-           return { name: file.name, downloadUrl: '#' }; // Placeholder on API call failure
         }
+
+        return {
+          name: file.name,
+          downloadUrl: downloadUrl,
+          createdAt: createdAt
+        };
       }));
       console.log('[loadFiles] Signed URLs generated.'); // Added log
 
-      setFiles(filesWithUrls);
-      console.log('[loadFiles] Files state updated.'); // Added log
-      
+      setFiles(filesWithUrlsAndTimestamps);
+      console.log('[loadFiles] Files state updated with timestamps.'); // Added log
+
       // Update has_files in database if it doesn't match reality
-      const hasAnyFiles = filesWithUrls.length > 0;
+      const hasAnyFiles = filesWithUrlsAndTimestamps.length > 0;
       if (hasAnyFiles !== hasFiles) {
         console.log('[loadFiles] Checking if has_files update needed. Current:', hasFiles, 'Actual:', hasAnyFiles); // Added log
         // --- Update has_files via API ---
@@ -174,19 +180,10 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       }
       console.log('[handleFileChange] Validation successful.'); // Log 7b
 
-      // Create filename with timestamp and unique ID
-      const now = new Date();
-      // Format as MMDDYYYY_HHMM
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const year = now.getFullYear();
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const timestamp = `${month}${day}${year}_${hours}${minutes}`;
-      const uniqueId = Date.now();
-      const fileName = `${timestamp}_${uniqueId}.csv`;
+      // Use original filename directly
+      const fileName = file.name;
       const filePath = `${domainId}/${fileName}`;
-      console.log('[handleFileChange] Generated filename:', fileName); // Log 8
+      console.log('[handleFileChange] Using original filename:', fileName); // Log 8
 
       // Upload file to storage
       console.log('[handleFileChange] Uploading file to Supabase storage:', filePath); // Log 9
@@ -277,23 +274,11 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
     }
   };
 
-  const formatFileName = (fileName: string) => {
-    // Extract timestamp from filename (MMDDYYYY_HHMM_uniqueId.csv)
-    const match = fileName.match(/^(\d{2})(\d{2})(\d{4})_(\d{2})(\d{2})_/);
-    if (match) {
-      const [_, month, day, year, hour, minute] = match;
-      
-      // Create Date object in UTC
-      const utcDate = new Date(Date.UTC(
-        parseInt(year),
-        parseInt(month) - 1, // JS months are 0-based
-        parseInt(day),
-        parseInt(hour),
-        parseInt(minute)
-      ));
-
-      // Format in local timezone
-      return utcDate.toLocaleString(undefined, {
+  // Helper function to format the ISO timestamp
+  const formatTimestamp = (isoString: string | null) => {
+    if (!isoString) return 'Date unknown';
+    try {
+      return new Date(isoString).toLocaleString(undefined, {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -301,8 +286,10 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
         minute: '2-digit',
         hour12: true
       });
+    } catch (e) {
+      console.error("Error formatting date:", e);
+      return 'Invalid date';
     }
-    return fileName;
   };
 
   return (
@@ -377,7 +364,8 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
                           <FileIcon className="h-5 w-5 text-blue-600" />
                         </div>
                         <div>
-                          <div className="text-sm font-medium text-slate-900">{formatFileName(file.name)}</div>
+                          <div className="text-sm font-medium text-slate-900">{file.name}</div>
+                          <div className="text-xs text-slate-500">{formatTimestamp(file.createdAt)}</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
