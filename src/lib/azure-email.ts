@@ -95,3 +95,41 @@ export async function sendInvitationEmail(
   // Send the email
   return sendEmail(to, subject, plainTextContent, htmlContent);
 }
+
+/**
+ * Sends a password reset email
+ * @param to Recipient email address
+ * @param token Reset token
+ * @returns Promise with the send operation result
+ */
+export async function sendPasswordResetEmail(
+  to: string,
+  token: string
+): Promise<{success: boolean, messageId?: string, error?: string}> {
+  const baseUrl = typeof window !== 'undefined' 
+    ? window.location.origin 
+    : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+  
+  const resetLink = `${baseUrl}/forgot-password/confirm?token=${token}`;
+  const subject = "Reset Your Password - Superwave";
+  const plainTextContent = `Click the following link to reset your password: ${resetLink}`;
+  
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <img src="${baseUrl}/superwave-logo-black.png" alt="Superwave Logo" style="max-width: 180px; margin: 20px auto; display: block;" />
+      <h1 style="color: #333; text-align: center;">Reset Your Password</h1>
+      <p style="color: #666; text-align: center;">Click the button below to reset your password:</p>
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${resetLink}" 
+           style="background-color: #000; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
+          Reset Password
+        </a>
+      </div>
+      <p style="color: #666; text-align: center; font-size: 14px; margin-top: 30px;">
+        If you didn't request this password reset, please ignore this email.
+      </p>
+    </div>
+  `;
+
+  return sendEmail(to, subject, plainTextContent, htmlContent);
+}

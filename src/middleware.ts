@@ -112,17 +112,34 @@ export async function middleware(request: NextRequest) {
     console.log(`[Middleware] No active session found for path: ${pathname}`);
   }
 
+  // Define paths that require authentication
+  const authenticatedPaths = [
+    '/domains',
+    '/settings',
+    '/users',
+    '/dns-records',
+  ];
+
   // Define public paths that don't require authentication
-  const publicPaths = ['/login', '/signup', '/forgot-password', '/auth/callback']; // Add any other public paths
+  const publicPaths = [
+    '/login', 
+    '/signup', 
+    '/forgot-password',
+    '/forgot-password/confirm',
+    '/auth/callback',
+    '/reset-password',
+    '/reset-password/confirm'
+  ]; // Add any other public paths
 
-  // Define authenticated paths
-  // Adjust this list based on your application structure
-  const authenticatedPaths = ['/domains', '/settings', '/users', '/dns-records'];
-
-  // --- Manual Path Handling ---
+  // Handle manual path redirection
   if (pathname === '/manual') {
-    // Redirect to the API proxy for GitBook content
     return NextResponse.redirect(new URL('/api/manual', request.url));
+  }
+
+  // Special handling for password reset confirm page
+  if (pathname.startsWith('/forgot-password/confirm')) {
+    console.log(`[Middleware] Bypassing auth checks for password reset: ${pathname}`);
+    return response;
   }
 
   // --- Authentication Logic ---
@@ -132,18 +149,16 @@ export async function middleware(request: NextRequest) {
   // If trying to access a protected route WITHOUT a valid session OR an active profile, redirect to login
   if (requiresAuth && !userIsActive) {
     console.log(`[Middleware] Access denied (requiresAuth=${requiresAuth}, userIsActive=${userIsActive}). Redirecting from ${pathname} to /login`);
-    // Clear potentially invalid cookies if user is inactive but session exists? Maybe not necessary here.
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
   // If trying to access a public route (like login/signup) WITH an active session/profile, redirect to domains
   if (isPublicPath && userIsActive) {
-     console.log(`[Middleware] Active session/profile & isPublicPath=true, redirecting from ${pathname} to /domains`);
-     return NextResponse.redirect(new URL('/domains', request.url));
+    console.log(`[Middleware] Active session/profile & isPublicPath=true, redirecting from ${pathname} to /domains`);
+    return NextResponse.redirect(new URL('/domains', request.url));
   }
 
   // Allow the request to proceed for all other cases
-  // (e.g., accessing public paths without session, accessing protected paths with active session/profile, API routes)
   console.log(`[Middleware] Allowing request to proceed for path: ${pathname} (userIsActive: ${userIsActive})`);
   return response; // Use the response object created by createClient
 }

@@ -9,7 +9,6 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { toast } from "sonner";
 import { useAuth } from "../../components/auth/auth-provider";
-// Link component is no longer needed
 
 export default function LoginPage() {
   const router = useRouter();
@@ -54,21 +53,19 @@ export default function LoginPage() {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <Card className="w-full max-w-md">
-        <CardHeader className="space-y-4 pt-8 pb-6"> {/* Added padding */}
-          {/* Replace CardTitle with Image */}
+        <CardHeader className="space-y-4 pt-8 pb-6">
           <div className="flex justify-center">
             <Image
-              src="/superwave-logo-black.png" // Path relative to public directory
+              src="/superwave-logo-black.png"
               alt="Superwave Logo"
-              width={180} // Adjust width as needed
-              height={40} // Adjust height based on aspect ratio
-              priority // Prioritize loading the logo
+              width={180}
+              height={40}
+              priority
             />
           </div>
-          {/* Removed CardDescription */}
         </CardHeader>
         <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-6 pt-4"> {/* Adjusted padding */}
+          <CardContent className="space-y-6 pt-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -83,9 +80,13 @@ export default function LoginPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
-                {/* Make the button non-focusable and type="button" to prevent accidental form submission */}
-                <Button type="button" variant="link" className="px-0 text-sm" tabIndex={-1}>
-                  {/* Forgot password? - Removed functionality for now */}
+                <Button
+                  type="button"
+                  variant="link"
+                  className="px-0 text-sm"
+                  onClick={() => router.push('/forgot-password')}
+                >
+                  Forgot password?
                 </Button>
               </div>
               <Input
@@ -95,16 +96,14 @@ export default function LoginPage() {
                 placeholder="Password"
                 value={formData.password}
                 onChange={handleChange}
-                autoComplete="current-password" // Add proper autocomplete attribute
+                autoComplete="current-password"
               />
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col pt-6 pb-8"> {/* Added padding */}
-            {/* Increased top margin for the button */}
+          <CardFooter className="flex flex-col pt-6 pb-8">
             <Button type="submit" className="w-full mt-4" disabled={isLoading}>
               {isLoading ? "Logging in..." : "Login"}
             </Button>
-            {/* Removed the Sign up link section */}
           </CardFooter>
         </form>
       </Card>
