@@ -5,7 +5,7 @@ import { CSVUpload } from "@/components/domains/csv-upload";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
 import { PlusCircle, ExternalLink, Loader2, AlertTriangle } from "lucide-react";
-import { createClient } from "@/lib/supabase-client"; // Import createClient, removed supabaseAdmin
+import { createClient,supabaseAdmin } from "@/lib/supabase-client";
 import {
   Table,
   TableBody,
@@ -125,8 +125,29 @@ export default function DomainsPage() {
   const [deletionConfirmation, setDeletionConfirmation] = useState<string>("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [assignedUsers, setAssignedUsers] = useState<Record<string, string>>({});
+  const [users, setUsers] = useState<Array<{ id: string; email: string; name?: string }>>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
-
+  const loadUsers = useCallback(async () => {
+    setIsLoadingUsers(true);
+    try {
+      const res = await fetch('/api/supabase/get-all-users');
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      setUsers(json.users || []);
+    } catch (error) {
+      toast.error('Failed to load users');
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  }, []);
+  
+  
+  useEffect(() => {
+    if (isAssignDialogOpen) {
+      loadUsers();
+    }
+  }, [isAssignDialogOpen, loadUsers]);
   // Apply filters to domains - wrapped in useCallback
   const applyFilters = useCallback((domains: CloudflareDomain[]) => {
     // Safety check - if domains is undefined or null, return empty array
@@ -1529,64 +1550,80 @@ export default function DomainsPage() {
           
           <div className="grid gap-6 py-4 max-h-[400px] overflow-y-auto">
             <div className="grid grid-cols-1 gap-4">
-              {mockUsers
-                .filter(user =>
-                  userSearchQuery === "" ||
-                  user.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-                  user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
-                )
-                .map(user => (
-                  <Button
-                    key={user.id}
-                    variant="outline"
-                    className="justify-start text-left py-6 h-auto"
-                    onClick={async () => {
-                      if (selectedDomainForAssignment) {
-                        try {
-                          // Create new assignment in domain_assignments table
-                          const { error } = await supabase
-                            .from('domain_assignments')
-                            .insert({
-                              domain_id: selectedDomainForAssignment.id,
-                              user_email: user.email,
-                              created_by: user?.email || null
-                            });
-
-                          if (error) throw error;
-
-                          toast.success(`${selectedDomainForAssignment.name} assigned to ${user.name}`);
-                          setIsAssignDialogOpen(false);
-                          
-                          // Reload domains and assignments to reflect changes
-                          await loadDomains({ useMockData: false }); // Reload current page
-                          await loadAssignedUsers();
-                        } catch (error) {
-                          console.error('Error assigning domain:', error);
-                          toast.error('Failed to assign domain');
-                        }
-                      }
-                    }}
-                  >
-                    <div className="flex items-center gap-5">
-                      <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary text-lg font-medium">
-                        {user.name.charAt(0)}
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-lg">{user.name}</span>
-                        <span className="text-sm text-muted-foreground pt-1">{user.email}</span>
-                      </div>
-                    </div>
-                  </Button>
-                ))}
-                
-              {mockUsers.filter(user =>
-                userSearchQuery !== "" &&
-                !user.name.toLowerCase().includes(userSearchQuery.toLowerCase()) &&
-                !user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
-              ).length === mockUsers.length && (
-                <div className="text-center py-6 text-muted-foreground">
-                  No users found matching &quot;{userSearchQuery}&quot;
+              {/* Loading state */}
+              {isLoadingUsers && (
+                <div className="text-center py-6">
+                  <span className="loading loading-spinner"></span>
+                  <span className="ml-2">Loading users...</span>
                 </div>
+              )}
+
+              {/* No users loaded */}
+              {!isLoadingUsers && users.length === 0 && (
+                <div className="text-center py-6 text-muted-foreground">
+                  No users available
+                </div>
+              )}
+
+              {/* Filter and display users */}
+              {!isLoadingUsers && users.length > 0 && (
+                <>
+                  {users
+                    .filter(user =>
+                      userSearchQuery === "" ||
+                      user.name?.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+                      user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
+                    )
+                    .map(user => (
+                      <Button
+                        key={user.id}
+                        variant="outline"
+                        className="justify-start text-left py-6 h-auto"
+                        onClick={async () => {
+                          if (selectedDomainForAssignment) {
+                            try {
+                              const { error } = await supabase
+                                .from('domain_assignments')
+                                .insert({
+                                  domain_id: selectedDomainForAssignment.id,
+                                  user_email: user.email,
+                                  created_by: user?.email || null
+                                });
+                              if (error) throw error;
+                              toast.success(`${selectedDomainForAssignment.name} assigned to ${user.name || user.email}`);
+                              setIsAssignDialogOpen(false);
+                              await loadDomains({ useMockData: false });
+                              await loadAssignedUsers();
+                            } catch (error) {
+                              console.error('Error assigning domain:', error);
+                              toast.error('Failed to assign domain');
+                            }
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-5">
+                          <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary text-lg font-medium">
+                            {(user.name || user.email).charAt(0)}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="font-medium text-lg">{user.name || user.email.split('@')[0]}</span>
+                            <span className="text-sm text-muted-foreground pt-1">{user.email}</span>
+                          </div>
+                        </div>
+                      </Button>
+                    ))}
+
+                  {/* No results after filtering */}
+                  {users.filter(user =>
+                    userSearchQuery !== "" &&
+                    !user.name?.toLowerCase().includes(userSearchQuery.toLowerCase()) &&
+                    !user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
+                  ).length === users.length && (
+                    <div className="text-center py-6 text-muted-foreground">
+                      No users found matching "{userSearchQuery}"
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
