@@ -1322,16 +1322,16 @@ export default function DomainsPage() {
         ) : (
           <>
             <div className="rounded-md border shadow-sm overflow-hidden bg-background mb-6">
-              <Table>
+              <Table className="table-fixed w-full">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[20%]">Domain Name</TableHead>
-                    <TableHead className="w-[15%]">Redirect</TableHead>
-                    <TableHead className="w-[10%]">Created On</TableHead>
-                    <TableHead className="w-[15%]">Storage</TableHead>
-                    <TableHead className="w-[10%]">Last Synced</TableHead>
-                    <TableHead className="w-[10%]">Status</TableHead>
-                    <TableHead className="w-[10%]">Assigned User</TableHead>
+                    <TableHead className="w-[14%]">Domain Name</TableHead>
+                    <TableHead className="w-[14%]">Redirect</TableHead>
+                    <TableHead className="w-[7%]">Created On</TableHead>
+                    <TableHead className="w-[9%]">Storage</TableHead>
+                    <TableHead className="w-[7%]">Last Synced</TableHead>
+                    <TableHead className="w-[7%]">Status</TableHead>
+                    <TableHead className="w-[20%]">Assigned User</TableHead>
                     <TableHead className="w-[15%] text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1438,29 +1438,67 @@ export default function DomainsPage() {
                             <span className="text-gray-500 text-sm">Unassigned</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setIsLoading(true);
-                              viewDnsRecords(domain.id, domain.name)
-                                .finally(() => setIsLoading(false));
-                            }}
-                          >
-                            DNS Records
-                          </Button>
-                          <>
-                            {isAdmin && (
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setIsLoading(true);
+                                viewDnsRecords(domain.id, domain.name)
+                                  .finally(() => setIsLoading(false));
+                              }}
+                            >
+                              DNS Records
+                            </Button>
+                            {isAdmin && !assignedUsers[domain.id] && (
                               <Button
-                                variant="ghost"
+                                variant="outline"
                                 size="sm"
+                                className="w-24 justify-center text-center"
                                 onClick={() => {
                                   setSelectedDomainForAssignment(domain);
                                   setIsAssignDialogOpen(true);
                                 }}
                               >
                                 Assign
+                              </Button>
+                            )}
+                            {isAdmin && assignedUsers[domain.id] && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-24 justify-center text-center border-red-300 text-red-700 hover:bg-red-50"
+                                onClick={async () => {
+                                  try {
+                                    const currentAssignedUser = assignedUsers[domain.id];
+                                    if (!currentAssignedUser) {
+                                      throw new Error('No user assigned to this domain');
+                                    }
+                                    const { error } = await supabase
+                                      .from('domain_assignments')
+                                      .delete()
+                                      .eq('domain_id', domain.id)
+                                      .eq('user_email', currentAssignedUser);
+
+                                    if (error) throw error;
+
+                                    toast.info(`${domain.name} unassigned from ${currentAssignedUser}`);
+
+                                    setAssignedUsers(prev => {
+                                      const newAssignments = { ...prev };
+                                      delete newAssignments[domain.id];
+                                      return newAssignments;
+                                    });
+
+                                    await loadDomains({ useMockData: false });
+                                  } catch (error) {
+                                    console.error('Error unassigning domain:', error);
+                                    toast.error('Failed to unassign domain');
+                                  }
+                                }}
+                              >
+                                Unassign
                               </Button>
                             )}
                             <Button
@@ -1475,7 +1513,7 @@ export default function DomainsPage() {
                             >
                               Delete
                             </Button>
-                          </>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -1639,38 +1677,34 @@ export default function DomainsPage() {
               <Button
                 variant="destructive"
                 onClick={async () => {
-                  if (selectedDomainForAssignment) {
-                    try {
-                      const currentAssignedUser = assignedUsers[selectedDomainForAssignment.id];
-                      if (!currentAssignedUser) {
-                        throw new Error('No user assigned to this domain');
-                      }
-
-                      // Delete assignment from domain_assignments table
-                      const { error } = await supabase
-                        .from('domain_assignments')
-                        .delete()
-                        .eq('domain_id', selectedDomainForAssignment.id)
-                        .eq('user_email', currentAssignedUser);
-
-                      if (error) throw error;
-
-                      toast.info(`${selectedDomainForAssignment.name} unassigned from ${currentAssignedUser}`);
-                      setIsAssignDialogOpen(false);
-                      
-                      // Update local state
-                      setAssignedUsers(prev => {
-                        const newAssignments = { ...prev };
-                        delete newAssignments[selectedDomainForAssignment.id];
-                        return newAssignments;
-                      });
-
-                      // Reload domains to reflect changes
-                      await loadDomains({ useMockData: false }); // Reload current page
-                    } catch (error) {
-                      console.error('Error unassigning domain:', error);
-                      toast.error('Failed to unassign domain');
+                  try {
+                    const currentAssignedUser = assignedUsers[selectedDomainForAssignment.id];
+                    if (!currentAssignedUser) {
+                      throw new Error('No user assigned to this domain');
                     }
+                    // Delete assignment from domain_assignments table
+                    const { error } = await supabase
+                      .from('domain_assignments')
+                      .delete()
+                      .eq('domain_id', selectedDomainForAssignment.id)
+                      .eq('user_email', currentAssignedUser);
+
+                    if (error) throw error;
+
+                    toast.info(`${selectedDomainForAssignment.name} unassigned from ${currentAssignedUser}`);
+
+                    // Update local state
+                    setAssignedUsers(prev => {
+                      const newAssignments = { ...prev };
+                      delete newAssignments[selectedDomainForAssignment.id];
+                      return newAssignments;
+                    });
+
+                    // Reload domains to reflect changes
+                    await loadDomains({ useMockData: false }); // Reload current page
+                  } catch (error) {
+                    console.error('Error unassigning domain:', error);
+                    toast.error('Failed to unassign domain');
                   }
                 }}
                 className="px-6 py-2"
