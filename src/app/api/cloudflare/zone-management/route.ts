@@ -16,13 +16,15 @@ export async function GET(request: NextRequest) {
     const page = url.searchParams.get('page') || '1';
     const perPage = url.searchParams.get('per_page') || '50';
 
-    const apiUrl = `${CLOUDFLARE_API_URL}/accounts/${CLOUDFLARE_ACCOUNT_ID}/zones?page=${page}&per_page=${perPage}&status=active`;
+    // Use the standard /zones endpoint instead of the account-scoped one
+    const apiUrl = `${CLOUDFLARE_API_URL}/zones?page=${page}&per_page=${perPage}&status=active`;
     
     console.log('[Zone Management] Fetching zones:', { apiUrl });
     
     const response = await fetch(apiUrl, {
       headers: {
         'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+        'X-Auth-Email': CLOUDFLARE_AUTH_EMAIL, // Add email header
         'Content-Type': 'application/json'
       },
       cache: 'no-store'
