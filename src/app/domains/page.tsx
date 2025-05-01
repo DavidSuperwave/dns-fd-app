@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef} from "react";
 import { CSVUpload } from "@/components/domains/csv-upload";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
@@ -99,9 +99,9 @@ export default function DomainsPage() {
   const router = useRouter();
   const { user, isAdmin } = useAuth();
   const supabase = createClient(); // Create client instance
-  const [allDomains, setAllDomains] = useState<CloudflareDomain[]>([]);
+  // const [allDomains, setAllDomains] = useState<CloudflareDomain[]>([]);
   const [domains, setDomains] = useState<CloudflareDomain[]>([]);
-  const [filteredDomains, setFilteredDomains] = useState<CloudflareDomain[]>([]);
+  // const [filteredDomains, setFilteredDomains] = useState<CloudflareDomain[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState<boolean>(false);
   const [isSyncing] = useState<boolean>(false);
@@ -149,244 +149,149 @@ export default function DomainsPage() {
     }
   }, [isAssignDialogOpen, loadUsers]);
   // Apply filters to domains - wrapped in useCallback
-  const applyFilters = useCallback((domains: CloudflareDomain[]) => {
-    // Safety check - if domains is undefined or null, return empty array
-    if (!domains || !Array.isArray(domains)) {
-      console.warn("Domains data is not an array:", domains);
-      return [];
-    }
-    let result = [...domains];
-
-    // Log original data for debugging
-    console.log(`Original domains count: ${domains.length}`);
-
-    // Apply search query first
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      result = result.filter(domain => {
-        const name = domain.name.toLowerCase();
-        // Check if it's an exact match first
-        if (name === query) return true;
-        // Then check for partial matches
-        if (name.includes(query)) return true;
-        // Remove common prefixes/suffixes for matching
-        const cleanName = name.replace(/^(www\.|http:\/\/|https:\/\/)/, '').replace(/\.[a-z]{2,}$/, '');
-        const cleanQuery = query.replace(/^(www\.|http:\/\/|https:\/\/)/, '').replace(/\.[a-z]{2,}$/, '');
-        return cleanName.includes(cleanQuery);
-      });
-      console.log(`Found ${result.length} domains matching search "${query}"`);
-    }
-
-    // Then apply status filter
-    if (statusFilter !== "all") {
-      const preFilterCount = result.length;
-      if (statusFilter === "paused") {
-        // Filter for paused domains
-        result = result.filter(domain => domain.paused);
-      } else {
-        // Exact status matching
-        result = result.filter(domain => {
-          if (domain.paused) return false;
-          return String(domain.status || "").trim().toLowerCase() === statusFilter.toLowerCase();
-        });
-      }
-      console.log(`Filtered from ${preFilterCount} to ${result.length} domains with status "${statusFilter}"`);
-    }
-
-    // Log filtered results for debugging
-    console.log(`Filtered to ${result.length} domains with status: ${statusFilter}`);
-    if (result.length > 0) {
-      console.log('Sample filtered domains:');
-      result.slice(0, 3).forEach(domain => {
-        console.log(`- ${domain.name}, Status: ${domain.status}, Paused: ${domain.paused}`);
-      });
-    }
-
-    return result;
-  }, [searchQuery, statusFilter]); // Added dependencies for applyFilters
+   // Added dependencies for applyFilters
 
 
   // Load domains from latest scan
-  const loadDomains = useCallback(async ({ useMockData = false, signal }: { useMockData?: boolean; signal?: AbortSignal }) => {
-    setIsLoading(true);
-    setIsError(false);
-
-    try {
+  const loadDomains = useCallback(
+    async ({ useMockData = false, signal }: { useMockData?: boolean; signal?: AbortSignal }) => {
+      setIsLoading(true);
+      setIsError(false);
+  
+      try {
         if (useMockData) {
-            // Mock data loading
-            const mockWithSync = mockDomains.map(domain => ({
-                ...domain,
-                last_synced: lastSyncTime || domain.last_synced,
-            }));
-            setAllDomains(mockWithSync);
-            setDomains(mockWithSync);
-            setFilteredDomains(mockWithSync);
-            setResultInfo(mockResultInfo);
-            setTotalPages(mockResultInfo.total_pages);
-            setUsingMockData(true);
-            toast.info("Using sample data for demonstration");
-            return;
+          // Mock data loading
+          const mockWithSync = mockDomains.map(domain => ({
+            ...domain,
+            last_synced: lastSyncTime || domain.last_synced,
+          }));
+          // setAllDomains(mockWithSync);
+          setDomains(mockWithSync);
+          // setFilteredDomains(mockWithSync);
+          setResultInfo(mockResultInfo);
+          setTotalPages(mockResultInfo.total_pages);
+          setUsingMockData(true);
+          toast.info("Using sample data for demonstration");
+          return;
         }
-
-        console.log("Loading domains from database...");
-
+  
         const isAuthReady = isAdmin !== undefined && (isAdmin || user?.email);
         if (!isAuthReady) {
-            console.warn('[loadDomains] Auth not ready or missing user email. Waiting for auth state.');
-            return;
+          console.warn('[loadDomains] Auth not ready or missing user email. Waiting for auth state.');
+          return;
         }
-
-        // Ensure that state is populated before querying
-        console.log("Auth check - isAdmin:", isAdmin, "user.email:", user?.email);
-
+  
         const PAGE_SIZE = 25;
-
+  
         // Get last sync time
         const { data: scanData } = await supabase
-            .from('scan_results')
-            .select('completed_at, updated_at')
-            .eq('status', 'completed')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
-
+          .from('scan_results')
+          .select('completed_at, updated_at')
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+  
         const timestamp = scanData?.completed_at || scanData?.updated_at;
         setLastSyncTime(timestamp ? new Date(timestamp as string).toISOString() : null);
-
-        /** --------------
-         * Build filter conditions
-         * -------------- */
-        const countQuery = supabase.from('domains').select('*', { count: 'exact', head: true });
-        const pageQuery = supabase.from('domains').select('*');
-
+  
+        // Build base query
+        let baseQuery = supabase.from('domains').select('*', { count: 'exact' });
+  
         // For non-admin users, restrict domains by assigned IDs
         if (!isAdmin && user?.email) {
-            const { data: assignments, error: assignmentError } = await supabase
-                .from('domain_assignments')
-                .select('domain_id')
-                .eq('user_email', user.email)
-                .abortSignal(signal ?? new AbortController().signal);
-
-            // Add a more robust check for null/undefined assignments
-            if (assignmentError) {
-                console.error(`Error fetching domain assignments for ${user.email}:`, assignmentError);
-                // Handle error appropriately - maybe show an error state or return empty
-                setAllDomains([]);
-                setDomains([]);
-                setFilteredDomains([]);
-                setResultInfo(null);
-                setTotalPages(1);
-                return; // Stop execution if assignments couldn't be fetched
-            }
-
-            if (!assignments || assignments.length === 0) {
-                 console.log(`No domains assigned to user ${user.email} or assignments array is null/empty.`);
-                 setAllDomains([]);
-                 setDomains([]);
-                 setFilteredDomains([]);
-                 setResultInfo(null);
-                 setTotalPages(1);
-                 return; // Stop if no assignments found
-            }
-
-            // Now it's safe to map over assignments
-            const assignedDomainIds = assignments.map(a => a.domain_id);
-
-            countQuery.in('id', assignedDomainIds);
-            pageQuery.in('id', assignedDomainIds);
+          const { data: assignments, error: assignmentError } = await supabase
+            .from('domain_assignments')
+            .select('domain_id')
+            .eq('user_email', user.email)
+            .abortSignal(signal ?? new AbortController().signal);
+  
+          if (assignmentError) {
+            console.error(`Error fetching domain assignments for ${user.email}:`, assignmentError);
+            // setAllDomains([]);
+            setDomains([]);
+            // setFilteredDomains([]);
+            setResultInfo(null);
+            setTotalPages(1);
+            return;
+          }
+  
+          if (!assignments || assignments.length === 0) {
+            // setAllDomains([]);
+            setDomains([]);
+            // setFilteredDomains([]);
+            setResultInfo(null);
+            setTotalPages(1);
+            return;
+          }
+  
+          const assignedDomainIds = assignments.map(a => a.domain_id);
+          baseQuery = baseQuery.in('id', assignedDomainIds);
         }
-
+  
         // Apply search filter
         if (searchQuery.trim()) {
-            countQuery.ilike('name', `%${searchQuery.trim()}%`);
-            pageQuery.ilike('name', `%${searchQuery.trim()}%`);
+          baseQuery = baseQuery.ilike('name', `%${searchQuery.trim()}%`);
         }
-
+  
         // Apply status filter
         if (statusFilter !== "all") {
-            if (statusFilter === "paused") {
-                countQuery.eq('paused', true);
-                pageQuery.eq('paused', true);
-            } else {
-                countQuery.eq('paused', false).eq('status', statusFilter);
-                pageQuery.eq('paused', false).eq('status', statusFilter);
-            }
+          if (statusFilter === "paused") {
+            baseQuery = baseQuery.eq('paused', true);
+          } else {
+            baseQuery = baseQuery.eq('paused', false).eq('status', statusFilter);
+          }
         }
+  
+        // Order and paginate
+        baseQuery = baseQuery.order('modified_on', { ascending: false });
+  
+        // Calculate range for page
+        const startIndex = (currentPage - 1) * PAGE_SIZE;
+        const endIndex = startIndex + PAGE_SIZE - 1;
+        baseQuery = baseQuery.range(startIndex, endIndex);
+  
+        // Fetch data and count in one request
+        const { data: pageData, count, error: pageError, status, statusText } = await baseQuery.abortSignal(signal ?? new AbortController().signal);
 
-        // Order results
-        pageQuery.order('modified_on', { ascending: false });
+if (pageError) {
+  console.error('Page fetch error:', {
+    pageError,
+    pageData,
+    status,
+    statusText,
+  });
+  throw pageError;
+}
 
-        /** --------------
-         * Fetch total count
-         * -------------- */
-        const { count, error: countError, status, statusText } = await countQuery.abortSignal(signal ?? new AbortController().signal);
-
-        if (countError) {
-            console.error('Count query failed:', {
-                countError,
-                status,
-                statusText,
-                userEmail: user?.email,  // Log user email to see if it's undefined
-            });
-            throw new Error('Count query failed');
-        }
-
-        console.log(`Count query successful: totalCount: ${count}, status: ${status}, statusText: ${statusText}`);
-
+// Defensive: treat null as empty array
+const typedPageData = (pageData as CloudflareDomain[]) || [];
         const totalCount = count ?? 0;
         const calculatedTotalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
-
-        // Adjust current page if invalid
-        const validPage = Math.min(Math.max(1, currentPage), calculatedTotalPages);
-        if (validPage !== currentPage) {
-            console.log(`Adjusting current page from ${currentPage} to ${validPage}`);
-            setCurrentPage(validPage);
-        }
-
-        // Calculate range for page
-        const startIndex = (validPage - 1) * PAGE_SIZE;
-        const endIndex = startIndex + PAGE_SIZE - 1;
-
-        /** --------------
-         * Fetch page data
-         * -------------- */
-        const { data: pageData, error: pageError, status: pageStatus, statusText: pageStatusText } = await pageQuery.abortSignal(signal ?? new AbortController().signal);
-
-        if (pageError || !pageData) {
-          console.error('Page fetch error:', {
-            pageError,
-            pageData,
-            pageStatus,
-            pageStatusText,
-          });
-          throw pageError ?? new Error('Page fetch failed');
-        }
-
-        const typedPageData = (pageData as CloudflareDomain[]) || [];
-
-        /** --------------
-         * Update States
-         * -------------- */
-        setAllDomains(typedPageData);
+        setDomains(typedPageData);
+        // setFilteredDomains(typedPageData);
         setTotalPages(calculatedTotalPages);
         setResultInfo({
-            page: validPage,
-            per_page: PAGE_SIZE,
-            total_pages: calculatedTotalPages,
-            count: typedPageData.length,
-            total_count: totalCount,
+          page: currentPage,
+          per_page: PAGE_SIZE,
+          total_pages: calculatedTotalPages,
+          count: typedPageData.length,
+          total_count: totalCount,
         });
-
-    } catch (error) {
+  
+      } catch (error) {
         console.error("Error loading domains:", error);
         setIsError(true);
         if (!useMockData) {
-            toast.error("Error loading domain data. Try using sample data.");
+          toast.error("Error loading domain data. Try using sample data.");
         }
-    } finally {
+      } finally {
         setIsLoading(false);
-    }
-}, [isAdmin, user?.email, searchQuery, statusFilter, currentPage, applyFilters]);
+      }
+    },
+    [isAdmin, user?.email, searchQuery, statusFilter, currentPage, lastSyncTime]
+  );
+  // ...existing code...
 
   // Load domains only when auth state (isAdmin and user.email for non-admins) is confirmed, or page changes
   useEffect(() => {
@@ -415,31 +320,8 @@ export default function DomainsPage() {
     load();
   
     return () => controller.abort();
-  }, [isAdmin, user?.email]);
-   // Make sure currentPage is a dependency
-   useEffect(() => {
-    if (!allDomains.length) return;
-  
-    const filtered = applyFilters(allDomains);
-  
-    const PAGE_SIZE = 25;
-    const calculatedTotalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
-    const validPage = Math.min(Math.max(1, currentPage), calculatedTotalPages);
-  
-    const startIndex = (validPage - 1) * PAGE_SIZE;
-    const endIndex = startIndex + PAGE_SIZE;
-    const paginatedDomains = filtered.slice(startIndex, endIndex);
-  
-    setFilteredDomains(paginatedDomains);
-    setTotalPages(calculatedTotalPages);
-    setResultInfo({
-      page: validPage,
-      per_page: PAGE_SIZE,
-      total_pages: calculatedTotalPages,
-      count: paginatedDomains.length,
-      total_count: filtered.length,
-    });
-  }, [allDomains, searchQuery, statusFilter, currentPage]);
+  }, [isAdmin, user?.email,searchQuery, statusFilter, currentPage]);
+   // Make sure currentPage is a dependenc
   
   // Mock users for assignment - in a real app this would come from an API
   const mockUsers = [
@@ -1090,6 +972,15 @@ export default function DomainsPage() {
     if (paused) return "Paused";
     return status.charAt(0).toUpperCase() + status.slice(1);
   };
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+
+const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const value = e.target.value;
+  if (searchTimeout.current) clearTimeout(searchTimeout.current);
+  searchTimeout.current = setTimeout(() => {
+    setSearchQuery(value);
+  }, 400); // 400ms debounce
+};
 
   return (
     <DashboardLayout>
@@ -1256,7 +1147,7 @@ export default function DomainsPage() {
               id="search"
               placeholder="Search domains..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={handleSearchChange}
               className="w-full"
             />
           </div>
@@ -1336,7 +1227,7 @@ export default function DomainsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {!filteredDomains || filteredDomains.length === 0 ? (
+                  {!domains || domains.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={8} className="text-center py-8">
                         {statusFilter !== "all" ? (
@@ -1378,7 +1269,7 @@ export default function DomainsPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredDomains.map((domain) => (
+                    domains.map((domain) => (
                       <TableRow key={domain.id}>
                         <TableCell className="font-medium">{domain.name}</TableCell>
                         <TableCell>
@@ -1531,7 +1422,7 @@ export default function DomainsPage() {
             }) */}
             <div className="flex justify-between items-center pt-4">
               <div className="text-sm text-muted-foreground">
-                {`Showing ${filteredDomains.length} of ${resultInfo?.total_count || 0} domains`}
+                {`Showing ${domains.length} of ${resultInfo?.total_count || 0} domains`}
               </div>
               {(resultInfo?.total_pages || 0) > 1 && (
                 <div className="flex space-x-2">
