@@ -125,10 +125,8 @@ export async function middleware(request: NextRequest) {
     '/login', 
     '/signup', 
     '/forgot-password',
-    '/forgot-password/confirm',
-    '/auth/callback',
     '/reset-password',
-    '/reset-password/confirm'
+    '/auth/callback',
   ]; // Add any other public paths
 
   // Handle manual path redirection
@@ -137,7 +135,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Special handling for password reset confirm page
-  if (pathname.startsWith('/forgot-password/confirm')) {
+  if (pathname.startsWith('/reset-password')) {
     console.log(`[Middleware] Bypassing auth checks for password reset: ${pathname}`);
     return response;
   }

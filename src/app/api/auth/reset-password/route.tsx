@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { randomBytes } from 'crypto';
-import { sendPasswordResetEmail } from '@/lib/azure-email';
 
 // Initialize Supabase admin client
 const supabaseAdmin = createClient(
@@ -11,65 +9,79 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { email } = await request.json();
+    const { email, password, token } = await request.json();
 
-    if (!email) {
+    if (!email || !password || !token) {
       return NextResponse.json(
-        { error: 'Email is required' },
+        { error: 'Email, password, and token are required' },
         { status: 400 }
       );
     }
 
-    // Find user without revealing existence
+    // 1. Verify the token and email in password_resets table
+    const { data: resetData, error: resetError } = await supabaseAdmin
+      .from('password_resets')
+      .select('*')
+      .eq('email', email)
+      .eq('token', token)
+      .eq('used', false)
+      .single();
+
+    if (resetError || !resetData) {
+      return NextResponse.json(
+        { error: 'Invalid or expired reset token' },
+        { status: 400 }
+      );
+    }
+
+    // Check if token is expired
+    if (new Date(resetData.expires_at) < new Date()) {
+      return NextResponse.json(
+        { error: 'Reset token has expired' },
+        { status: 400 }
+      );
+    }
+
+    // 2. Find the user by email
     const { data: userData, error: userError } = await supabaseAdmin
       .from('user_profiles')
-      .select('*')
+      .select('id')
       .eq('email', email)
       .single();
 
-    const user = userData || null;
-    
-    if (userError || !user) {
-      return NextResponse.json({
-        success: true,
-        message: 'If an account exists, a reset link will be sent.'
-      });
+    if (userError || !userData) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      );
     }
 
-    // Generate reset token
-    const resetToken = randomBytes(32).toString('hex');
+    // 3. Update the user's password
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userData.id, { password });
 
-    // Store token in database (assuming you've created the password_resets table)
-    const { error: insertError } = await supabaseAdmin
+    if (updateError) {
+      console.error('[Reset Password Confirm] Error updating password:', updateError);
+      return NextResponse.json(
+        { error: updateError.message || 'Failed to update password' },
+        { status: 500 }
+      );
+    }
+
+    // 4. Mark the token as used
+    await supabaseAdmin
       .from('password_resets')
-      .insert({
-        user_id: user.id,
-        token: resetToken,
-        expires_at: new Date(Date.now() + 3600000).toISOString() // 1 hour expiry
-      });
-
-    if (insertError) {
-      console.error('[Reset Password] Error storing reset token:', insertError);
-      throw insertError;
-    }
-
-    // Send password reset email
-    const { success, error: emailError } = await sendPasswordResetEmail(email, resetToken);
-
-    if (!success || emailError) {
-      console.error('[Reset Password] Error sending email:', emailError);
-      throw new Error(emailError || 'Failed to send reset email');
-    }
+      .update({ used: true })
+      .eq('id', resetData.id);
 
     return NextResponse.json({
       success: true,
-      message: 'If your email is registered, you will receive reset instructions.'
+      message: 'Password updated successfully'
     });
 
   } catch (error) {
-    console.error('[Reset Password] Error:', error);
+    console.error('[Reset Password Confirm] Error:', error);
     return NextResponse.json(
-      { error: 'Failed to process request' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

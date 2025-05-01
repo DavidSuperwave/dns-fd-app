@@ -20,6 +20,7 @@ export default function ForgotPasswordPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +44,7 @@ export default function ForgotPasswordPage() {
       }
 
       toast.success("Password reset instructions sent to your email");
+      setEmailSent(true);
       setTimeout(() => router.push("/login"), 2000);
     } catch (error) {
       console.error("Reset password error:", error);
@@ -70,34 +72,42 @@ export default function ForgotPasswordPage() {
             Enter your email address and we'll send you instructions to reset your password.
           </CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-6 pt-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+        {emailSent ? (
+          <CardContent className="py-8">
+            <div className="text-center text-green-600 font-medium">
+              Password reset instructions have been sent to your email.
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col pt-6 pb-8">
-            <Button type="submit" className="w-full mt-4" disabled={isLoading}>
-              {isLoading ? "Sending..." : "Send Reset Instructions"}
-            </Button>
-            <Button
-              type="button"
-              variant="link"
-              className="mt-4"
-              onClick={() => router.push("/login")}
-            >
-              Back to Login
-            </Button>
-          </CardFooter>
-        </form>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <CardContent className="space-y-6 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+            </CardContent>
+            <CardFooter className="flex flex-col pt-6 pb-8">
+              <Button type="submit" className="w-full mt-4" disabled={isLoading}>
+                {isLoading ? "Sending..." : "Send Reset Instructions"}
+              </Button>
+              <Button
+                type="button"
+                variant="link"
+                className="mt-4"
+                onClick={() => router.push("/login")}
+              >
+                Back to Login
+              </Button>
+            </CardFooter>
+          </form>
+        )}
       </Card>
     </div>
   );

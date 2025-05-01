@@ -104,13 +104,11 @@ export async function sendInvitationEmail(
  */
 export async function sendPasswordResetEmail(
   to: string,
-  token: string
+  resetLink: string
 ): Promise<{success: boolean, messageId?: string, error?: string}> {
   const baseUrl = typeof window !== 'undefined' 
     ? window.location.origin 
     : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-  
-  const resetLink = `${baseUrl}/forgot-password/confirm?token=${token}`;
   const subject = "Reset Your Password - Superwave";
   const plainTextContent = `Click the following link to reset your password: ${resetLink}`;
   

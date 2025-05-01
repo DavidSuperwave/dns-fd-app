@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { supabaseAdmin } from "@/lib/supabase-client";
 import {
   Card,
   CardContent,
@@ -28,61 +27,25 @@ export default function ResetPasswordConfirmPage() {
   const [isValidToken, setIsValidToken] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
 
+  // Extract token and email from URL
+  const token = searchParams.get("token");
+  const email = searchParams.get("email");
+
   useEffect(() => {
-    const verifyToken = async () => {
-      console.log('[DEBUG-RESET] Starting token verification');
-      const token = searchParams.get('token');
-
-      if (!token) {
-        console.log('[DEBUG-RESET] No token found in URL');
-        toast.error("Invalid reset link");
-        router.push('/login');
-        return;
-      }
-
-      try {
-        // Verify token is valid and not expired
-        const { data, error } = await supabaseAdmin
-          .from('password_resets')
-          .select('user_id, expires_at')
-          .eq('token', token)
-          .is('used_at', null)
-          .single();
-
-        console.log('[DEBUG-RESET] Token verification result:', { 
-          success: !error, 
-          hasData: !!data 
-        });
-
-        if (error || !data) {
-          throw new Error('Invalid or expired reset token');
-        }
-
-        // Check if token is expired
-        if (new Date(data.expires_at) < new Date()) {
-          throw new Error('Reset token has expired');
-        }
-
-        setIsValidToken(true);
-        console.log('[DEBUG-RESET] Token verified successfully');
-
-      } catch (error) {
-        console.error('[DEBUG-RESET] Token verification error:', error);
-        toast.error(error instanceof Error ? error.message : "Invalid reset link");
-        router.push('/login');
-      }
-    };
-
-    verifyToken();
-  }, [searchParams, router]);
+    if (!token || !email) {
+      toast.error("Invalid reset link");
+      router.push("/login");
+      return;
+    }
+    // Optionally, you can call your backend to validate the token/email here
+    setIsValidToken(true);
+  }, [token, email, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[DEBUG-RESET] Starting password reset');
-    
+
     if (!isValidToken) {
-      console.log('[DEBUG-RESET] Token not validated');
-      toast.error("Please wait for token verification");
+      toast.error("Invalid or expired reset link");
       return;
     }
 
@@ -96,68 +59,42 @@ export default function ResetPasswordConfirmPage() {
       return;
     }
 
-    const token = searchParams.get('token');
-    if (!token) {
-      toast.error("Missing reset token");
-      return;
-    }
-
     setIsLoading(true);
-    console.log('[DEBUG-RESET] Attempting password update');
 
     try {
-      // First, get the user_id from the valid token
-      const { data: resetData } = await supabaseAdmin
-        .from('password_resets')
-        .select('user_id')
-        .eq('token', token)
-        .single();
+      // Call your backend API to reset the password
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, token, password }),
+      });
 
-      if (!resetData?.user_id) {
-        throw new Error('Invalid reset token');
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Failed to reset password");
       }
 
-      // Update the password using admin API
-      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-        resetData.user_id,
-        { password }
-      );
-
-      if (updateError) throw updateError;
-
-      // Mark token as used
-      await supabaseAdmin
-        .from('password_resets')
-        .update({ used_at: new Date().toISOString() })
-        .eq('token', token);
-
-      console.log('[DEBUG-RESET] Password updated successfully');
       toast.success("Password reset successful!");
-      
-      // Give time for the toast to show
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       router.push("/login");
-
     } catch (error) {
-      console.error("[DEBUG-RESET] Password update error:", error);
       toast.error(error instanceof Error ? error.message : "Failed to reset password");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Generate a secure password
   const handleGeneratePassword = async () => {
     const newPassword = generateSecurePassword();
     setPassword(newPassword);
     setConfirmPassword(newPassword);
-    
+
     try {
       await navigator.clipboard.writeText(newPassword);
       toast.success("Password generated and copied to clipboard!");
     } catch (err) {
-      console.error('Failed to copy:', err);
-      toast.error('Failed to copy to clipboard');
+      toast.error("Failed to copy to clipboard");
     }
 
     if (passwordRef.current) {
