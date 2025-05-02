@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-
+import { cronLogger } from '../../cron/sync/route';
 // Set runtime configuration
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +15,13 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const page = url.searchParams.get('page') || '1';
     const perPage = url.searchParams.get('per_page') || '50';
-    console.log('Cloudflare token present:', !!process.env.CLOUDFLARE_API_TOKEN, process.env.CLOUDFLARE_API_TOKEN?.length);
+    await cronLogger(
+      'Cloudflare token presence check',
+      {
+        present: !!process.env.CLOUDFLARE_API_TOKEN,
+        length: process.env.CLOUDFLARE_API_TOKEN?.length ?? 0,
+      }
+    );
     // Use the standard /zones endpoint instead of the account-scoped one
     const apiUrl = `${CLOUDFLARE_API_URL}/zones?page=${page}&per_page=${perPage}&status=active`;
     

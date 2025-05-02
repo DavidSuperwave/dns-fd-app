@@ -54,7 +54,7 @@ const PAGES_PER_RUN = 10; // Process 10 pages per execution to avoid timeouts
 // Define a type for the optional data payload
 type LogData = Record<string, unknown> | string | number | boolean | null | undefined;
 
-async function cronLogger(message: string, data?: LogData, scanId?: string) {
+export async function cronLogger(message: string, data?: LogData, scanId?: string) {
   const timestamp = new Date().toISOString();
   const logMessage = `[${timestamp}]${scanId ? ` [Scan ${scanId}]` : ''} CRON SYNC: ${message}`;
 
