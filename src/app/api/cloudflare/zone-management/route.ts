@@ -14,13 +14,6 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const page = url.searchParams.get('page') || '1';
     const perPage = url.searchParams.get('per_page') || '50';
-    await cronLogger(
-      'Cloudflare token presence check',
-      {
-        present: !!process.env.CLOUDFLARE_API_TOKEN,
-        length: process.env.CLOUDFLARE_API_TOKEN?.length ?? 0,
-      }
-    );
     // Use the standard /zones endpoint instead of the account-scoped one
     const apiUrl = `${CLOUDFLARE_API_URL}/zones?page=${page}&per_page=${perPage}&status=active`;
     
@@ -167,28 +160,6 @@ export async function GET(request: NextRequest) {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
-  }
-}
-type LogData = Record<string, unknown> | string | number | boolean | null | undefined;
-async function cronLogger(message: string, data?: LogData, scanId?: string) {
-  const timestamp = new Date().toISOString();
-  const logMessage = `[${timestamp}]${scanId ? ` [Scan ${scanId}]` : ''} CRON SYNC: ${message}`;
-
-  // Always log to console
-  console.log(logMessage);
-  if (data !== undefined && data !== null) console.log(JSON.stringify(data, null, 2)); // Check for undefined/null
-
-  try {
-    // In Edge runtime, we can't write to file system, but we can log more details
-    if (process.env.NODE_ENV === 'development') {
-      console.log('=== CRON DEBUG LOG ===');
-      console.log(`Environment: ${process.env.NODE_ENV}`);
-      console.log(`Message: ${message}`);
-      if (data !== undefined && data !== null) console.log(`Data: ${JSON.stringify(data, null, 2)}`); // Check for undefined/null
-      console.log('=====================');
-    }
-  } catch (error) {
-    console.error('Error in cronLogger:', error);
   }
 }
 

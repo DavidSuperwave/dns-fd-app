@@ -395,9 +395,22 @@ export async function GET(request: Request) {
     // Determine the end page for this specific run
     // Need totalPages first. Fetch page 1 if unknown.
     if (totalPages === null) {
+      const bypassToken = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+      const fetchHeaders: HeadersInit = {};
+        if (!bypassToken) {
+          // Log an error or throw if the bypass token is essential and missing
+          await cronLogger('CRITICAL: Vercel Automation Bypass Secret is missing!', {}, currentRunScanId);
+          throw new Error('Missing required Vercel bypass token environment variable.');
+        }
+        fetchHeaders['x-vercel-protection-bypass'] = `${bypassToken}`;
         const page1Url = `${origin}/api/cloudflare/zone-management?page=1&per_page=${perPage}`;
+        // Add logging to confirm headers (mask sensitive token)
+        await cronLogger('Attempting internal fetch to zone-management', {
+          apiUrl: page1Url,
+          headersToSend: { Authorization: 'Bearer ***MASKED***' } // Mask the token in logs
+        }, currentRunScanId);
         await cronLogger('Fetching page 1 to get pagination info', { apiUrl: page1Url }, currentRunScanId);
-        const page1Response = await fetch(page1Url, { headers: { ...(authHeader ? { 'Authorization': authHeader } : {}) } });
+        const page1Response = await fetch(page1Url, { headers: fetchHeaders });
         if (!page1Response.ok) throw new Error(`Failed to fetch domains (page 1 for totals): HTTP ${page1Response.status}`);
         const page1Data = await page1Response.json();
         if (!page1Data.success) throw new Error(`Failed to fetch domains (page 1 for totals): ${page1Data.error || 'Unknown error'}`);
