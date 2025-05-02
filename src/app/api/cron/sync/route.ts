@@ -54,7 +54,7 @@ const PAGES_PER_RUN = 10; // Process 10 pages per execution to avoid timeouts
 // Define a type for the optional data payload
 type LogData = Record<string, unknown> | string | number | boolean | null | undefined;
 
-export async function cronLogger(message: string, data?: LogData, scanId?: string) {
+async function cronLogger(message: string, data?: LogData, scanId?: string) {
   const timestamp = new Date().toISOString();
   const logMessage = `[${timestamp}]${scanId ? ` [Scan ${scanId}]` : ''} CRON SYNC: ${message}`;
 
@@ -463,7 +463,7 @@ export async function GET(request: Request) {
 
         try {
             const pageResponse = await fetch(pageUrl, { headers: { ...(authHeader ? { 'Authorization': authHeader } : {}) } });
-            if (!pageResponse.ok) throw new Error(`Failed to fetch domains on page ${currentPage}: HTTP ${pageResponse.status}`);
+            if (!pageResponse.ok) throw new Error(`Failed to fetch domains on page ${currentPage}: HTTP ${pageResponse}`);
 
             const pageData = await pageResponse.json();
             if (!pageData.success) throw new Error(`Failed to fetch domains on page ${currentPage}: ${pageData.error || 'Unknown error'}`);
