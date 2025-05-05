@@ -8,14 +8,13 @@ export const dynamic = 'force-dynamic';
 /**
  * This endpoint sets up the required tables for Cloudflare to Supabase synchronization
  * It can be triggered with a GET request and a secret key parameter
- * Example: /api/supabase/setup-sync-tables?key=dns-fd-R2wQ9p7X4sK8tL3zY6mN1bV5cX2zZ9mN8bV6xC3
  */
 export async function GET(request: Request) {
   try {
     // Check for setup key for authorization
     const url = new URL(request.url);
     const setupKey = url.searchParams.get('key');
-    const validKey = process.env.CRON_SECRET || 'dns-fd-R2wQ9p7X4sK8tL3zY6mN1bV5cX2zZ9mN8bV6xC3';
+    const validKey = process.env.CRON_SECRET;
     
     if (setupKey !== validKey) {
       return NextResponse.json(

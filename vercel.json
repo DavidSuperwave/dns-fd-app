@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/sync",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/fetch-redirects",
+      "schedule": "0 * * * *"
     }
   ],
   "env": {

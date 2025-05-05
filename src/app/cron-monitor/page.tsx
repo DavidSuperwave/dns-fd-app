@@ -370,6 +370,60 @@ export default function CronMonitorPage() {
     return `${(ms / 1000).toFixed(2)}s`;
   };
 
+  const [isTriggeringRedirectSync, setIsTriggeringRedirectSync] = useState(false); // New state
+
+  // New function to trigger the redirect sync
+  const simulateRedirectSync = async () => {
+    if (!isAdmin) {
+      toast.error('Only administrators can simulate cron jobs');
+      return;
+    }
+    if (isTriggeringRedirectSync || isTriggeringSync) {
+         toast.info('Another sync simulation is already running.');
+         return;
+    }
+
+    try {
+      setIsTriggeringRedirectSync(true);
+      toast.info('Simulating Redirect Sync job...');
+
+      // Use the same cron secret or define one if needed
+      const cronSecret = process.env.NEXT_PUBLIC_CRON_SECRET;
+
+      const response = await fetch('/api/cron/fetch-redirects?debug=true', { // Target the new endpoint
+        method: 'GET',
+        headers: {
+          // Mimic Vercel Cron headers for authorization check
+          'user-agent': 'vercel-cron/1.0',
+          'Authorization': `Bearer ${cronSecret}`
+          // Add other headers if your authorization logic requires them
+        }
+      });
+
+      // Reset state regardless of outcome, show toast based on result
+      setIsTriggeringRedirectSync(false);
+
+      const result = await response.json(); // Read response body
+
+      if (!response.ok) {
+        console.error('Redirect Sync simulation failed:', result);
+        throw new Error(result.error || `HTTP error! status: ${response.status}`);
+      }
+
+      if (result.success) {
+        toast.success(`Redirect Sync simulation finished: ${result.message}`);
+        // Optionally trigger a refresh of relevant data if needed
+        // fetchSyncHistory(); // Or fetch data relevant to redirects if you display it
+      } else {
+         console.error('Redirect Sync simulation returned success:false:', result);
+        throw new Error(result.error || 'Unknown error during redirect sync simulation');
+      }
+    } catch (error) {
+      console.error('Error simulating redirect sync:', error);
+      toast.error(`Redirect Sync simulation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+       setIsTriggeringRedirectSync(false); // Ensure state is reset on error
+    }
+  };
   return (
     <DashboardLayout>
       <div className="w-full max-w-full px-4 py-6 md:px-6 lg:px-8">
@@ -388,7 +442,16 @@ export default function CronMonitorPage() {
                   <Clock className="h-4 w-4" />
                   Simulate Cron
                 </Button>
-                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={simulateRedirectSync} // Call the new function
+                  disabled={isTriggeringSync || isTriggeringRedirectSync} // Disable if either is running
+                  className="flex items-center gap-1 border-blue-200 text-blue-700 hover:bg-blue-50" // Different color
+                >
+                  <Clock className="h-4 w-4" /> {/* Example icon */}
+                  Simulate Redirect Sync
+                </Button>
                 {tablesExist === false && (
                   <Button
                     variant="outline"
