@@ -2,7 +2,7 @@ import { EmailClient } from "@azure/communication-email";
 
 // Azure Communication Services configuration
 const connectionString = "endpoint=https://sw-01.unitedstates.communication.azure.com/;accesskey=AEukP4bAKqA7qviO1tDeVxTMhzkTpw5ciJl9IhZbFeVOE7OjV9UGJQQJ99AFACULyCpb8TiCAAAAAZCSHrmv";
-const senderAddress = "desk@concierge.swbs.co";
+const senderAddress = "hey@c.superwave.ai";
 
 /**
  * Sends an email using Azure Communication Services
