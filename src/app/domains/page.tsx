@@ -540,142 +540,61 @@ const typedPageData = (pageData as CloudflareDomain[]) || [];
   // Handle domain deletion
   const handleDeleteDomain = async () => {
     if (!selectedDomainForDeletion) return;
-    
+
     // Check confirmation text matches domain name
     if (deletionConfirmation !== selectedDomainForDeletion.name) {
       toast.error("Confirmation text does not match domain name");
       return;
     }
-    
-    setIsDeleting(true);
-    
+
+    setIsDeleting(true); // Show loading state
+
     try {
-      let cloudflareDeletionAttempted = false;
-      let cloudflareDeletionSuccessful = false;
-      let cloudflareErrorMessage = '';
+      console.log(`[handleDeleteDomain] Calling API to delete domain ID ${selectedDomainForDeletion.id}`);
 
-      try {
-        // Get the domain from Supabase first to get the Cloudflare ID
-        const { data: domainData, error: domainError } = await supabase
-          .from('domains')
-          .select('cloudflare_id')
-          .eq('id', selectedDomainForDeletion.id)
-          .single();
-
-        if (domainError || !domainData?.cloudflare_id) {
-          throw new Error('Failed to get Cloudflare ID for domain from Supabase');
-        }
-
-        const cfId = domainData.cloudflare_id;
-        console.log(`[handleDeleteDomain] Attempting to delete domain with internal ID: ${selectedDomainForDeletion.id}, Cloudflare ID: ${cfId}`);
-        cloudflareDeletionAttempted = true;
-
-        // Delete from Cloudflare using the Cloudflare ID
-        const response = await fetch(`/api/cloudflare/domains/${cfId}`, {
-          method: 'DELETE',
-        });
-
-        const data = await response.json();
-        console.log('Cloudflare delete response:', data);
-
-        if (!response.ok || !data.success) {
-          cloudflareErrorMessage = data.error ||
-                                 data.errors?.[0]?.message ||
-                                 data.messages?.[0]?.message ||
-                                 `Cloudflare API request failed with status ${response.status}`;
-          console.error('Cloudflare delete error:', { status: response.status, error: cloudflareErrorMessage, data });
-          // DO NOT throw here if it's an invalid ID error, let Supabase deletion proceed
-          if (!cloudflareErrorMessage.toLowerCase().includes('invalid object identifier') && !cloudflareErrorMessage.toLowerCase().includes('could not route')) {
-             throw new Error(cloudflareErrorMessage); // Throw for other Cloudflare errors
-          }
-        } else {
-          cloudflareDeletionSuccessful = true;
-          console.log(`Successfully deleted domain ${cfId} from Cloudflare.`);
-          // Wait only if Cloudflare deletion was successful
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-
-      } catch (cfError) {
-         // Catch errors during the Cloudflare fetch/check itself (e.g., network error, failed to get ID)
-         console.error('Error during Cloudflare deletion attempt:', cfError);
-         // If we didn't even get a specific message from CF API, use the caught error's message
-         if (!cloudflareErrorMessage) {
-           cloudflareErrorMessage = cfError instanceof Error ? cfError.message : 'Error during Cloudflare interaction';
-         }
-         // Re-throw unless it's the specific invalid ID error we want to ignore for CF part
-         if (!cloudflareErrorMessage.toLowerCase().includes('invalid object identifier') && !cloudflareErrorMessage.toLowerCase().includes('could not route')) {
-            throw cfError;
-         }
-      }
-
-      // --- Call Server-Side API for Supabase Deletion ---
-      console.log(`[handleDeleteDomain] Calling API to delete domain ID ${selectedDomainForDeletion?.id} from Supabase.`);
+      // --- Call Server-Side API for ALL Deletion Logic ---
       const apiResponse = await fetch(`/api/domains/${selectedDomainForDeletion.id}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
+          // Authorization header might be needed if your API expects it beyond cookies
+          // 'Authorization': `Bearer ${session?.access_token}` // Example if using JWT
         },
       });
 
       const apiResult = await apiResponse.json();
 
       if (!apiResponse.ok) {
-        console.error(`[handleDeleteDomain] API deletion failed for ${selectedDomainForDeletion?.id}:`, apiResult.error);
-        // Throw this error as it's critical for DB consistency
-        throw new Error(`Failed to delete domain from database via API: ${apiResult.error || `Status ${apiResponse.status}`}`);
-      }
-      console.log(`[handleDeleteDomain] Successfully deleted domain ID ${selectedDomainForDeletion?.id} via API.`);
-
-      // After successful deletion (or skipped deletion), reload the current page data
-      // This will naturally handle pagination adjustments if the current page becomes empty
-      console.log(`[handleDeleteDomain] Domain deletion process continuing, reloading current page data.`);
-      await loadDomains({ useMockData: false });
-
-
-      // Remove domain assignments (using the regular client, assuming RLS allows it or it's handled by triggers/API)
-      console.log(`[handleDeleteDomain] Deleting assignments for domain ID ${selectedDomainForDeletion?.id}.`);
-      const { error: assignmentError } = await supabase
-        .from('domain_assignments')
-        .delete()
-        .eq('domain_id', selectedDomainForDeletion?.id); // Delete assignments by internal ID
-
-      if (assignmentError) {
-        // Log but don't necessarily fail the whole operation
-        console.error('Failed to delete domain assignments:', assignmentError);
-        toast.warning(`Domain removed, but failed to clear assignments: ${assignmentError.message}`);
-      } else {
-         console.log(`Successfully deleted assignments for domain ID ${selectedDomainForDeletion?.id}.`);
+        // API returned an error (e.g., 4xx, 5xx)
+        console.error(`[handleDeleteDomain] API deletion failed for ${selectedDomainForDeletion.id}:`, apiResult.error);
+        throw new Error(apiResult.error || `Deletion request failed with status ${apiResponse.status}`);
       }
 
-      // Refresh assignments in UI state
-      await loadAssignedUsers();
+      // --- Success Handling ---
+      console.log(`[handleDeleteDomain] Successfully initiated deletion for domain ID ${selectedDomainForDeletion.id} via API.`);
+      toast.success(apiResult.message || `Domain ${selectedDomainForDeletion.name} deleted successfully.`);
 
-      // Show appropriate success/warning message
-      if (cloudflareDeletionAttempted && !cloudflareDeletionSuccessful) {
-         toast.warning(`Removed stale domain ${selectedDomainForDeletion?.name} from the platform. It did not exist or was invalid in Cloudflare.`, {
-            description: `Cloudflare error: ${cloudflareErrorMessage}`
-         });
-      } else {
-         // Adjust success message to reflect API deletion
-         toast.success(`Domain ${selectedDomainForDeletion?.name} deleted successfully from Cloudflare and the platform. Assignments removed.`);
-      }
+      // Reload data after successful deletion
+      await loadDomains({ useMockData: false }); // Reload domain list
+      await loadAssignedUsers(); // Reload assignments (API should have deleted them)
 
-      // Close the dialog and reset
+      // Close the dialog and reset state
       setIsDeleteDialogOpen(false);
       setSelectedDomainForDeletion(null);
       setDeletionConfirmation('');
 
-    } catch (error) { // This catch block now correctly corresponds to the try block starting at 641
-      // Catch errors from Cloudflare deletion or unexpected errors during the process
+    } catch (error) {
+      // Catch errors from the API call or unexpected issues
       console.error('Error during the deletion process:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error during deletion';
-      toast.error(`Failed to complete deletion: ${errorMessage}`, {
-        description: 'The domain might be partially deleted. Please check Supabase and Cloudflare.'
+      toast.error(`Failed to delete domain: ${errorMessage}`, {
+         description: 'Please check the console or server logs for more details.'
       });
-    } finally { // This finally block now correctly corresponds to the try block starting at 641
-      setIsDeleting(false);
+    } finally {
+      setIsDeleting(false); // Hide loading state
     }
-  }; // End of handleDeleteDomain
+  };
+ // End of handleDeleteDomain
 
   // Format date from Cloudflare timestamp
   const formatDate = (dateString: string, includeTime: boolean = false) => {
@@ -717,7 +636,7 @@ const typedPageData = (pageData as CloudflareDomain[]) || [];
         return "bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs font-medium";
     }
   };
-
+ 
   // Handle domain add (placeholder as we can't actually add domains via API)
   const handleAddDomain = async () => {
     try {
