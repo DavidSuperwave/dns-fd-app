@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef} from "react";
 import { CSVUpload } from "@/components/domains/csv-upload";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
-import { PlusCircle, ExternalLink, Loader2, AlertTriangle } from "lucide-react";
+import { PlusCircle, ExternalLink, Loader2, AlertTriangle, Edit3, Link as LinkIcon } from "lucide-react";
 import { createClient,supabaseAdmin } from "@/lib/supabase-client";
 import {
   Table,
@@ -127,6 +127,13 @@ export default function DomainsPage() {
   const [assignedUsers, setAssignedUsers] = useState<Record<string, string>>({});
   const [users, setUsers] = useState<Array<{ id: string; email: string; name?: string }>>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+   // --- State for Edit Redirect Dialog ---
+   const [isEditRedirectDialogOpen, setIsEditRedirectDialogOpen] = useState(false);
+   const [selectedDomainForEditRedirect, setSelectedDomainForEditRedirect] = useState<CloudflareDomain | null>(null);
+   const [currentRedirectUrlForDialog, setCurrentRedirectUrlForDialog] = useState<string>("");
+   const [newRedirectUrl, setNewRedirectUrl] = useState<string>("");
+   const [isUpdatingRedirect, setIsUpdatingRedirect] = useState<boolean>(false);
+   // ---
 
   const loadUsers = useCallback(async () => {
     setIsLoadingUsers(true);
@@ -900,6 +907,73 @@ const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(value);
   }, 400); // 400ms debounce
 };
+// --- Edit Redirect Dialog Handlers ---
+const handleOpenEditRedirectDialog = (domain: CloudflareDomain) => {
+  setSelectedDomainForEditRedirect(domain);
+  setCurrentRedirectUrlForDialog(domain.redirect_url || "");
+  setNewRedirectUrl(domain.redirect_url || ""); // Pre-fill with current or empty
+  setIsEditRedirectDialogOpen(true);
+};
+
+const handleCloseEditRedirectDialog = () => {
+  setIsEditRedirectDialogOpen(false);
+  setSelectedDomainForEditRedirect(null);
+  setCurrentRedirectUrlForDialog("");
+  setNewRedirectUrl("");
+  setIsUpdatingRedirect(false);
+};
+
+const handleUpdateRedirect = async () => {
+  if (!selectedDomainForEditRedirect || !selectedDomainForEditRedirect.id) {
+    toast.error("No domain selected or domain ID is missing.");
+    return;
+  }
+
+  const targetRedirectUrl = newRedirectUrl.trim();
+
+  // Basic validation for the new redirect URL (similar to add domain)
+  if (targetRedirectUrl && !targetRedirectUrl.startsWith('http://') && !targetRedirectUrl.startsWith('https://')) {
+      toast.error("New redirect URL must start with http:// or https://");
+      return;
+  }
+  if (targetRedirectUrl && stripUrlPrefixes(targetRedirectUrl).length > 0) {
+      const validation = validateDomain(stripUrlPrefixes(targetRedirectUrl));
+      if (!validation.isValid) {
+          toast.error(validation.error || "Invalid new redirect URL format.");
+          return;
+      }
+  }
+
+
+  setIsUpdatingRedirect(true);
+  toast.info(`Updating redirect for ${selectedDomainForEditRedirect.name}...`);
+
+  try {
+    const response = await fetch(`/api/cloudflare/domains/${selectedDomainForEditRedirect.id}/redirect`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newRedirectUrl: targetRedirectUrl || null }), // Send null to remove redirect
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || `Failed to update redirect (Status: ${response.status})`);
+    }
+
+    toast.success(result.message || `Redirect for ${selectedDomainForEditRedirect.name} updated successfully.`);
+    handleCloseEditRedirectDialog();
+    await loadDomains({ useMockData: usingMockData }); // Refresh domain list
+    await loadAssignedUsers(); // Refresh assignments as last_synced might change
+
+  } catch (error) {
+    console.error("Error updating redirect:", error);
+    toast.error(error instanceof Error ? error.message : "An unknown error occurred.");
+  } finally {
+    setIsUpdatingRedirect(false);
+  }
+};
+// ---
 
   return (
     <DashboardLayout>
@@ -1132,7 +1206,7 @@ const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         ) : (
           <>
             <div className="rounded-md border shadow-sm overflow-hidden bg-background mb-6">
-              <Table className="table-fixed w-full">
+              <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[14%]">Domain Name</TableHead>
@@ -1250,6 +1324,11 @@ const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
+                            {/* --- Edit Redirect Button --- */}
+                            <Button variant="outline" size="sm" className="px-2 sm:px-3 py-1 text-xs sm:text-sm" onClick={() => handleOpenEditRedirectDialog(domain)}>
+                                <Edit3 className="h-3 w-3 sm:mr-1" /> <span className="hidden sm:inline">Edit Redirect</span>
+                            </Button>
+                            {/* --- End Edit Redirect Button --- */}
                             <Button
                               variant="outline"
                               size="sm"
@@ -1587,6 +1666,70 @@ const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
           </form>
         </DialogContent>
       </Dialog>
+      {/* --- Edit Redirect Dialog --- */}
+      <Dialog open={isEditRedirectDialogOpen} onOpenChange={handleCloseEditRedirectDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Redirect URL</DialogTitle>
+            <DialogDescription>
+              Update the redirect target for <strong>{selectedDomainForEditRedirect?.name}</strong>.
+              Leave the "New Redirect URL" blank to remove the redirect.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="current-redirect" className="text-right col-span-1">
+                Domain
+              </Label>
+              <Input
+                id="current-domain"
+                value={selectedDomainForEditRedirect?.name || ""}
+                disabled
+                className="col-span-3 bg-slate-50"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="current-redirect" className="text-right col-span-1">
+                Current Redirect
+              </Label>
+              <Input
+                id="current-redirect"
+                value={currentRedirectUrlForDialog || "Not set"}
+                disabled
+                className="col-span-3 bg-slate-50"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="new-redirect" className="text-right col-span-1">
+                New Redirect
+              </Label>
+              <Input
+                id="new-redirect"
+                value={newRedirectUrl}
+                onChange={(e) => setNewRedirectUrl(e.target.value)}
+                placeholder="https://new-target.com (or leave blank to remove)"
+                className="col-span-3"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseEditRedirectDialog} disabled={isUpdatingRedirect}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateRedirect} disabled={isUpdatingRedirect}>
+              {isUpdatingRedirect ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* --- End Edit Redirect Dialog --- */}
     </DashboardLayout>
   );
 }
