@@ -217,7 +217,7 @@ async function processDomainPage(
     const processStartTime = performance.now();
     if (!domains || !domains.length) return 0;
 
-    // Map domain data for Supabase upsert, ensuring redirect_url is null
+    // Map domain data for Supabase upsert, OMITTING redirect_url
     const domainsForDB = domains.map((domain) => ({
         cloudflare_id: domain.id,
         name: domain.name,
@@ -226,8 +226,8 @@ async function processDomainPage(
         type: domain.type || 'unknown',
         created_on: domain.created_on,
         modified_on: domain.modified_on,
-        last_synced: timestamp,
-        redirect_url: null // Ensure this is null as it's not fetched here
+        last_synced: timestamp
+        // redirect_url is no longer specified here
     }));
 
     try {
@@ -240,7 +240,7 @@ async function processDomainPage(
             });
 
         if (error) {
-             await cronLogger('Supabase upsert error', { count: domains.length, error: error.message, code: error.code, details: error.details }, scanId);
+            await cronLogger('Supabase upsert error', { count: domains.length, error: error.message, code: error.code, details: error.details }, scanId);
             // Throw specific error to be caught by the main handler
             throw new Error(`Failed to upsert domains: ${error.message} (Code: ${error.code})`);
         }
@@ -249,8 +249,8 @@ async function processDomainPage(
         // console.log(`Upserted ${domains.length} domains to Supabase. Duration: ${durationMs}ms`); // Verbose success log
         return domains.length;
     } catch (error) {
-         const durationMs = Math.round(performance.now() - processStartTime);
-         await cronLogger('Exception during domain upsert', { error: error instanceof Error ? error.message : error, durationMs }, scanId);
+        const durationMs = Math.round(performance.now() - processStartTime);
+        await cronLogger('Exception during domain upsert', { error: error instanceof Error ? error.message : error, durationMs }, scanId);
         throw error; // Re-throw
     }
 }
