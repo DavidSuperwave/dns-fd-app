@@ -302,7 +302,7 @@ export default function DomainsPage() {
         setIsLoading(false);
       }
     },
-    [supabase, isAdmin, user?.email, searchQuery, statusFilter, currentPage, lastSyncTime]
+    [supabase, isAdmin, user?.email, searchQuery, statusFilter, currentPage]
   );
   // ...existing code...
 
@@ -467,7 +467,7 @@ export default function DomainsPage() {
     // Remove 'assignedUsers' from this dependency array to break the loop.
     // Keep 'isLoading' if its changes genuinely need to re-trigger subscription setup
     // or if callbacks rely on its fresh closure.
-  }, [isAdmin, user?.email, loadAssignedUsers, isLoading, supabase, loadDomains]);// Add dependencies
+  }, [isAdmin, user?.email, loadAssignedUsers, isLoading,]);// Add dependencies
 
   // Handle dialog state
   const handleOpenChange = (open: boolean) => {
