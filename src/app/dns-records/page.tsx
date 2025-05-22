@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
+import { Checkbox } from "../../components/ui/checkbox"; 
 import {
   Table,
   TableBody,
@@ -468,7 +469,27 @@ export default function DNSRecordsPage() {
                     }
                   />
                 </div>
-
+                <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="proxied" className="text-right">
+                      Proxied
+                    </Label>
+                    <Checkbox // Or <input type="checkbox" />
+                      id="proxied"
+                      className="col-span-3" // Adjust styling as needed
+                      checked={newRecord.proxied}
+                      onCheckedChange={(checked) => // For shadcn/ui Checkbox
+                        setNewRecord({
+                          ...newRecord,
+                          // checked can be boolean or 'indeterminate' for shadcn/ui
+                          proxied: checked === true 
+                        })
+                      }
+                      // If using a standard HTML checkbox:
+                      // onChange={(e) =>
+                      //   setNewRecord({ ...newRecord, proxied: e.target.checked })
+                      // }
+                    />
+                  </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="ttl" className="text-right">
                     TTL
