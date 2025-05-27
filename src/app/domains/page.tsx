@@ -8,7 +8,7 @@ import { PlusCircle, ExternalLink, Loader2, AlertTriangle, Edit3, Link as LinkIc
 import { createClient, supabaseAdmin } from "@/lib/supabase-client";
 import {
   Table,
-  TableBody,
+  TableBody, 
   TableCell,
   TableHead,
   TableHeader,
@@ -36,6 +36,7 @@ import {
 } from "../../components/ui/select";
 import DashboardLayout from "../../components/layout/dashboard-layout";
 import { useAuth } from "../../components/auth/auth-provider";
+import { createDnsRecord } from "../../lib/cloudflare-api";
 
 // Domain assignment interface
 interface DomainAssignment {
@@ -58,6 +59,7 @@ interface CloudflareDomain {
   created_by?: string;
   has_files?: boolean; // Add this property
   user_id?: string | null; // Add this property
+  cloudflare_id?: string | null;
 }
 
 // Result info interface from Cloudflare
@@ -67,6 +69,14 @@ interface ResultInfo {
   total_pages: number;
   count: number;
   total_count: number;
+}
+
+interface CloudflareDnsRecordMinimal {
+  id: string;
+  type: string;
+  name: string;
+  content: string;
+  proxied: boolean;
 }
 
 // Domain status type
@@ -135,7 +145,7 @@ export default function DomainsPage() {
   const [isUpdatingRedirect, setIsUpdatingRedirect] = useState<boolean>(false);
   // ---
   const assignedUsersRef = useRef(assignedUsers); // Add this ref
-
+  const [searchInput, setSearchInput] = useState<string>("");
   // Update the ref whenever assignedUsers state changes
   useEffect(() => {
     assignedUsersRef.current = assignedUsers;
@@ -664,8 +674,10 @@ export default function DomainsPage() {
   // Reset filters
   const resetFilters = () => {
     setStatusFilter("all");
-    setSearchQuery("");
-  };
+    setSearchQuery(""); // Clear the active search query
+    setSearchInput(""); // Clear the displayed value in the input box
+    setCurrentPage(1); // Reset to first page
+};
 
   // Get domain status class
   const getStatusStyle = (status: string, paused: boolean) => {
@@ -755,6 +767,8 @@ export default function DomainsPage() {
       }
 
       if (result.success) {
+        const cloudflareZoneId = result.domain.id;
+        const cloudflareDomainName = result.domain.name;
         // Add domain to Supabase through API
         const supabaseResponse = await fetch('/api/supabase/domains', {
           method: 'POST',
@@ -893,6 +907,43 @@ export default function DomainsPage() {
           // Reload domains to ensure proper filtering
           loadDomains({ useMockData: false }); // Reload current page
         }
+        // **NEW: Add DNS Records**
+        try {
+          toast.info(`Adding DNS records for ${cloudflareDomainName}...`);
+          // Record 1: Root domain (e.g., revihq.com)
+          const dnsRecord1 = {
+            type: "A",
+            name: cloudflareDomainName, // Use the actual domain name
+            content: "192.0.2.1",
+            proxied: true,
+            ttl: 1, // 1 for Automatic
+          };
+          const record1Result = await createDnsRecord(cloudflareZoneId, dnsRecord1);
+          if (record1Result) { // createDnsRecord should return the created record or null/throw error
+            toast.success(`A record for ${cloudflareDomainName} added.`);
+          } else {
+            toast.error(`Failed to add A record for ${cloudflareDomainName}.`);
+          }
+
+          // Record 2: www subdomain (e.g., www.revihq.com)
+          const dnsRecord2 = {
+            type: "A",
+            name: `www.${cloudflareDomainName}`, // Add www prefix
+            content: "192.0.2.2",
+            proxied: true,
+            ttl: 1, // 1 for Automatic
+          };
+          const record2Result = await createDnsRecord(cloudflareZoneId, dnsRecord2);
+          if (record2Result) {
+            toast.success(`A record for www.${cloudflareDomainName} added.`);
+          } else {
+            toast.error(`Failed to add A record for www.${cloudflareDomainName}.`);
+          }
+        } catch (dnsError) {
+          console.error('Error adding DNS records:', dnsError);
+          toast.error(`Failed to add DNS records for ${cloudflareDomainName}: ${dnsError instanceof Error ? dnsError.message : 'Unknown DNS error'}`);
+        }
+        // **END NEW DNS Record Addition**
 
         // Show nameservers
         if (result.nameservers?.length) {
@@ -948,15 +999,15 @@ export default function DomainsPage() {
     if (paused) return "Paused";
     return status.charAt(0).toUpperCase() + status.slice(1);
   };
-  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  // const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    searchTimeout.current = setTimeout(() => {
-      setSearchQuery(value);
-    }, 400); // 400ms debounce
-  };
+  // const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   const value = e.target.value;
+  //   if (searchTimeout.current) clearTimeout(searchTimeout.current);
+  //   searchTimeout.current = setTimeout(() => {
+  //     setSearchQuery(value);
+  //   }, 400); // 400ms debounce
+  // };
   // --- Edit Redirect Dialog Handlers ---
   const handleOpenEditRedirectDialog = (domain: CloudflareDomain) => {
     setSelectedDomainForEditRedirect(domain);
@@ -978,8 +1029,10 @@ export default function DomainsPage() {
       toast.error("No domain selected or domain ID is missing.");
       return;
     }
-
+    console.log(selectedDomainForEditRedirect);
     const targetRedirectUrl = newRedirectUrl.trim();
+    const zoneId = selectedDomainForEditRedirect.cloudflare_id; // This is the Cloudflare Zone ID
+    const domainName = selectedDomainForEditRedirect.name;
 
     // Basic validation for the new redirect URL (similar to add domain)
     if (targetRedirectUrl && !targetRedirectUrl.startsWith('http://') && !targetRedirectUrl.startsWith('https://')) {
@@ -1012,6 +1065,91 @@ export default function DomainsPage() {
       }
 
       toast.success(result.message || `Redirect for ${selectedDomainForEditRedirect.name} updated successfully.`);
+      if (targetRedirectUrl) {
+        toast.info(`Ensuring A records are in place for ${domainName}...`);
+        let existingDnsRecords: CloudflareDnsRecordMinimal[] = [];
+
+        // Fetch existing DNS records
+        try {
+          const dnsResponse = await fetch(`/api/cloudflare/dns-records?zone_id=${zoneId}&per_page=200`); // Fetch a good number of records
+          const dnsData = await dnsResponse.json();
+          if (dnsResponse.ok && dnsData.success) {
+            existingDnsRecords = dnsData.dnsRecords;
+          } else {
+            console.warn("Could not fetch existing DNS records:", dnsData.error);
+            // toast.warn(`Could not verify existing DNS records for ${domainName}. Proceeding to create if necessary.`);
+          }
+        } catch (fetchDnsError: any) {
+          console.warn("Error fetching existing DNS records:", fetchDnsError);
+          // toast.warn(`Error fetching DNS records for ${domainName}: ${fetchDnsError.message}. Proceeding to create if necessary.`);
+        }
+
+        // A Record 1: Root domain (e.g., revihq.com -> 192.0.2.1)
+        const rootRecordContent = "192.0.2.1";
+        const rootRecordExists = existingDnsRecords.some(
+          (record) =>
+            record.type === "A" &&
+            record.name === domainName &&
+            record.content === rootRecordContent
+        );
+
+        if (!rootRecordExists) {
+          try {
+            const record1Result = await createDnsRecord(zoneId ?? '', {
+              type: "A",
+              name: domainName,
+              content: rootRecordContent,
+              proxied: true,
+              ttl: 1, // Automatic
+            });
+            if (record1Result) {
+              toast.success(`A record for ${domainName} created.`);
+            } else {
+              toast.warning(`Failed to create A record for ${domainName}. Please check/add manually.`);
+            }
+          } catch (e: any) {
+            console.error(`Error creating A record for ${domainName}:`, e);
+            toast.warning(`Error creating A record for ${domainName}: ${e.message}. Please check/add manually.`);
+          }
+        } else {
+          console.log(`A record for ${domainName} (to ${rootRecordContent}) already exists.`);
+        }
+
+        // A Record 2: www subdomain (e.g., www.revihq.com -> 192.0.2.2)
+        const wwwRecordName = `www.${domainName}`;
+        const wwwRecordContent = "192.0.2.2";
+        const wwwRecordExists = existingDnsRecords.some(
+          (record) =>
+            record.type === "A" &&
+            record.name === wwwRecordName &&
+            record.content === wwwRecordContent
+        );
+
+        if (!wwwRecordExists) {
+          try {
+            const record2Result = await createDnsRecord(zoneId ?? '', {
+              type: "A",
+              name: wwwRecordName,
+              content: wwwRecordContent,
+              proxied: true,
+              ttl: 1, // Automatic
+            });
+            if (record2Result) {
+              toast.success(`A record for ${wwwRecordName} created.`);
+            } else {
+              toast.warning(`Failed to create A record for ${wwwRecordName}. Please check/add manually.`);
+            }
+          } catch (e: any) {
+            console.error(`Error creating A record for ${wwwRecordName}:`, e);
+            toast.warning(`Error creating A record for ${wwwRecordName}: ${e.message}. Please check/add manually.`);
+          }
+        } else {
+          console.log(`A record for ${wwwRecordName} (to ${wwwRecordContent}) already exists.`);
+        }
+      } else {
+        // Redirect was removed, A records are not touched.
+        toast.info(`Redirect for ${domainName} was removed. A records were not modified automatically.`);
+      }
       handleCloseEditRedirectDialog();
       await loadDomains({ useMockData: usingMockData }); // Refresh domain list
       await loadAssignedUsers(); // Refresh assignments as last_synced might change
@@ -1188,9 +1326,16 @@ export default function DomainsPage() {
             <Label htmlFor="search" className="sr-only">Search</Label>
             <Input
               id="search"
-              placeholder="Search domains..."
-              value={searchQuery}
-              onChange={handleSearchChange}
+              placeholder="Search domains and press Enter..."
+              value={searchInput} // Use the new state for display
+              onChange={(e) => setSearchInput(e.target.value)} // Update live input state
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault(); // Prevent any default form submission
+                  setSearchQuery(searchInput.trim()); // Set the actual search query on Enter
+                  setCurrentPage(1); // Reset to first page on new search
+                }
+              }}
               className="w-full"
             />
           </div>

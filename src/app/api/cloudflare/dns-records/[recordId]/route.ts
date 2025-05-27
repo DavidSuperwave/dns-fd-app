@@ -117,10 +117,12 @@ function mockDnsRecordsResponse(zoneId: string, page: string, perPage: string) {
 }
 export async function DELETE(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params: paramsPromise }: { params: Promise<{ recordId: string }> }
 ) {
   try {
-    const recordId = (await params).id;
+     const actualParams = await paramsPromise;
+    const recordId = actualParams.recordId;
+    // const recordId = (await params).id;
     if (!recordId || recordId.trim() === '') {
       return NextResponse.json(
         { success: false, error: 'Invalid Record ID' },
