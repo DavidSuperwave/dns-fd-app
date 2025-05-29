@@ -543,20 +543,60 @@ export default function DomainsPage() {
   };
 
   const handleRedirectChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.toLowerCase();
-    const validation = validateDomain(stripUrlPrefixes(value));
-    setNewDomain({
-      ...newDomain,
-      redirect: value,
-      isRedirectValid: validation.isValid
-    });
+  const value = e.target.value; // This is what the user typed
+
+  // Explicitly type validationResult to allow error to be undefined
+  let validationResult: { isValid: boolean; error?: string } = { 
+    isValid: false, 
+    error: "Redirect URL is required." // Initial state still has a defined error
   };
+
+  // The "Add Domain" dialog requires a redirect URL.
+  if (value.trim() !== "") { // If the user typed something
+    validationResult = isValidRedirectUrl(value); // Now the assignment is type-compatible
+  }
+  
+  setNewDomain({
+    ...newDomain,
+    redirect: value, // Store exactly what the user typed
+    isRedirectValid: validationResult.isValid // Update validity based on the new check
+  });
+};
 
   // Function to strip http://, https://, and www.
   const stripUrlPrefixes = (url: string) => {
     return url.replace(/^(https?:\/\/)?(www\.)?/, '');
   };
 
+  // Helper function to validate a full redirect URL
+const isValidRedirectUrl = (url: string): { isValid: boolean; error?: string } => {
+  if (!url) {
+    // This error applies if the redirect URL field cannot be empty.
+    // If empty is allowed (e.g., to remove a redirect), this check might need adjustment based on context.
+    return { isValid: false, error: 'Redirect URL cannot be empty.' };
+  }
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return { isValid: false, error: 'Redirect URL must start with http:// or https://.' };
+  }
+  try {
+    const parsedUrl = new URL(url); // This checks if the URL string is well-formed
+
+    // Your existing 'validateDomain' function (I'm assuming it's defined elsewhere in your code)
+    // can be used to check if the domain part of the URL is valid.
+    const domainValidation = validateDomain(parsedUrl.hostname); 
+    if (!domainValidation.isValid) {
+        return { isValid: false, error: `The domain part of the redirect URL is invalid: ${domainValidation.error || 'Invalid domain structure'}` };
+    }
+
+    if (url.includes(' ')) { // URLs generally should not contain unencoded spaces
+        return { isValid: false, error: 'Redirect URL cannot contain spaces. Use %20 if needed.' };
+    }
+    return { isValid: true }; // If all checks pass
+  } catch (_) {
+    // This catches errors if 'new URL(url)' fails, meaning the URL string is badly malformed.
+    return { isValid: false, error: 'Invalid redirect URL format. Please enter a complete URL (e.g., https://example.com/path).' };
+  }
+};
   // Function to validate domain
   const validateDomain = (domain: string): { isValid: boolean; error?: string } => {
     // Check for dashes in domain part (before first dot)
@@ -713,11 +753,13 @@ export default function DomainsPage() {
 
       // Clean up domain and redirect
       const cleanDomain = stripUrlPrefixes(newDomain.name);
-      const cleanRedirect = newDomain.redirect ? stripUrlPrefixes(newDomain.redirect) : '';
+      const enteredRedirectUrl = newDomain.redirect.trim();
+      // const cleanRedirect = newDomain.redirect ? stripUrlPrefixes(newDomain.redirect) : '';
 
       // Both fields are required
-      if (!cleanDomain || !cleanRedirect) {
+      if (!cleanDomain || !enteredRedirectUrl) {
         toast.error("Both domain and redirect are required");
+        setIsSubmitting(false);
         return;
       }
 
@@ -725,15 +767,21 @@ export default function DomainsPage() {
       const domainValidation = validateDomain(cleanDomain);
       if (!domainValidation.isValid) {
         toast.error(domainValidation.error || "Invalid domain name");
+        setIsSubmitting(false);
         return;
       }
 
       // Validate redirect
-      if (!cleanRedirect.match(/^[a-z0-9][a-z0-9-]*[a-z0-9](\.[a-z0-9-]+)*\.[a-z]{2,}$/i)) {
-        toast.error("Please enter a valid redirect domain");
+      // if (!cleanRedirect.match(/^[a-z0-9][a-z0-9-]*[a-z0-9](\.[a-z0-9-]+)*\.[a-z]{2,}$/i)) {
+      //   toast.error("Please enter a valid redirect domain");
+      //   return;
+      // }
+      const redirectValidationResultOnSubmit = isValidRedirectUrl(enteredRedirectUrl);
+      if (!redirectValidationResultOnSubmit.isValid) {
+        toast.error(redirectValidationResultOnSubmit.error || "Invalid redirect URL.");
+        setIsSubmitting(false); // Make sure to reset loading state
         return;
       }
-
       // Check if domain already exists
       const existingDomain = domains.find(d =>
         stripUrlPrefixes(d.name).toLowerCase() === cleanDomain.toLowerCase()
@@ -751,7 +799,7 @@ export default function DomainsPage() {
         },
         body: JSON.stringify({
           name: cleanDomain,
-          redirect_url: `https://${cleanRedirect}`
+          redirect_url: enteredRedirectUrl,
         })
       });
 
@@ -784,7 +832,7 @@ export default function DomainsPage() {
             created_on: result.domain.created_on,
             modified_on: result.domain.modified_on,
             last_synced: new Date().toISOString(),
-            redirect_url: result.domain.redirect_url,
+            redirect_url: enteredRedirectUrl,
             created_by: user?.email || null
           })
         });
@@ -1035,18 +1083,25 @@ export default function DomainsPage() {
     const domainName = selectedDomainForEditRedirect.name;
 
     // Basic validation for the new redirect URL (similar to add domain)
-    if (targetRedirectUrl && !targetRedirectUrl.startsWith('http://') && !targetRedirectUrl.startsWith('https://')) {
-      toast.error("New redirect URL must start with http:// or https://");
-      return;
-    }
-    if (targetRedirectUrl && stripUrlPrefixes(targetRedirectUrl).length > 0) {
-      const validation = validateDomain(stripUrlPrefixes(targetRedirectUrl));
-      if (!validation.isValid) {
-        toast.error(validation.error || "Invalid new redirect URL format.");
-        return;
+    // if (targetRedirectUrl && !targetRedirectUrl.startsWith('http://') && !targetRedirectUrl.startsWith('https://')) {
+    //   toast.error("New redirect URL must start with http:// or https://");
+    //   return;
+    // }
+    // if (targetRedirectUrl && stripUrlPrefixes(targetRedirectUrl).length > 0) {
+    //   const validation = validateDomain(stripUrlPrefixes(targetRedirectUrl));
+    //   if (!validation.isValid) {
+    //     toast.error(validation.error || "Invalid new redirect URL format.");
+    //     return;
+    //   }
+    // }
+    if (targetRedirectUrl) { // Only validate if a URL is provided
+      const redirectValidationResult = isValidRedirectUrl(targetRedirectUrl);
+      if (!redirectValidationResult.isValid) {
+        toast.error(redirectValidationResult.error || "Invalid new redirect URL format.");
+        // setIsUpdatingRedirect(false); // This will be handled by the finally block
+        return; // Stop if validation fails
       }
     }
-
 
     setIsUpdatingRedirect(true);
     toast.info(`Updating redirect for ${selectedDomainForEditRedirect.name}...`);
