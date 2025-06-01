@@ -193,7 +193,7 @@ export async function GET(request: NextRequest) {
       const perPage = url.searchParams.get('per_page') || '50'; // Default to 50, sync job uses 100
 
       // Use the standard /zones endpoint to list active zones
-      const apiUrl = `${CLOUDFLARE_API_URL}/zones?page=${page}&per_page=${perPage}&status=active&match=all`;
+      const apiUrl = `${CLOUDFLARE_API_URL}/zones?page=${page}&per_page=${perPage}&status=active,pending&match=all`;
 
       console.log(`[Zone Management] Fetching zones from Cloudflare API: Page ${page}, PerPage ${perPage}`, { apiUrl });
 

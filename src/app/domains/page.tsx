@@ -8,7 +8,7 @@ import { PlusCircle, ExternalLink, Loader2, AlertTriangle, Edit3, Link as LinkIc
 import { createClient, supabaseAdmin } from "@/lib/supabase-client";
 import {
   Table,
-  TableBody, 
+  TableBody,
   TableCell,
   TableHead,
   TableHeader,
@@ -307,12 +307,26 @@ export default function DomainsPage() {
         }
 
         // Apply status filter
-        if (statusFilter !== "all") {
-          if (statusFilter === "paused") {
-            baseQuery = baseQuery.eq('paused', true);
-          } else {
-            baseQuery = baseQuery.eq('paused', false).eq('status', statusFilter);
-          }
+        // if (statusFilter !== "all") {
+        //   if (statusFilter === "paused") {
+        //     baseQuery = baseQuery.eq('paused', true);
+        //   } else {
+        //     baseQuery = baseQuery.eq('paused', false).eq('status', statusFilter);
+        //   }
+        // }
+        // Apply status filter
+        if (statusFilter === "all") {
+          // When "all" is selected (which is the default initial state),
+          // filter for domains that are either 'active' OR 'pending' AND are not paused.
+          baseQuery = baseQuery.in('status', ['active', 'pending']).eq('paused', false);
+        } else if (statusFilter === "paused") {
+          // If "paused" is specifically selected, filter for domains where paused is true.
+          baseQuery = baseQuery.eq('paused', true);
+        } else {
+          // For any other specific status filter (e.g., "active", "pending", "inactive", etc.),
+          // filter by that status AND ensure the domain is not paused.
+          // This correctly handles cases where the user explicitly selects "active" or "pending".
+          baseQuery = baseQuery.eq('status', statusFilter).eq('paused', false);
         }
 
         // Order and paginate
@@ -505,11 +519,11 @@ export default function DomainsPage() {
         const domain = payload.new as CloudflareDomain;
         // Use assignedUsersRef.current here to get the latest assignments
         // without making assignedUsers state a direct dependency that causes the loop.
-        const currentAssignedUsers = assignedUsersRef.current; 
+        const currentAssignedUsers = assignedUsersRef.current;
         if (isAdmin ||
           (user?.email &&
             ((domain?.created_by === user.email ||
-             (currentAssignedUsers && domain?.id && currentAssignedUsers[domain.id] === user.email))))) {
+              (currentAssignedUsers && domain?.id && currentAssignedUsers[domain.id] === user.email))))) {
           console.log('[Realtime] Domain change detected, reloading domain data');
           if (!isLoading) { // isLoading state is still a valid dependency if its change should re-setup subscriptions or its logic
             await loadDomains({ useMockData: false, signal: controller.signal });
@@ -521,7 +535,7 @@ export default function DomainsPage() {
     return () => {
       controller.abort();
       // It's good practice to explicitly remove the channel on cleanup
-      supabase.removeChannel(channel); 
+      supabase.removeChannel(channel);
     };
     // Remove 'assignedUsers' from this dependency array to break the loop.
     // Keep 'isLoading' if its changes genuinely need to re-trigger subscription setup
@@ -592,25 +606,25 @@ export default function DomainsPage() {
   };
 
   const handleRedirectChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const value = e.target.value; // This is what the user typed
+    const value = e.target.value; // This is what the user typed
 
-  // Explicitly type validationResult to allow error to be undefined
-  let validationResult: { isValid: boolean; error?: string } = { 
-    isValid: false, 
-    error: "Redirect URL is required." // Initial state still has a defined error
+    // Explicitly type validationResult to allow error to be undefined
+    let validationResult: { isValid: boolean; error?: string } = {
+      isValid: false,
+      error: "Redirect URL is required." // Initial state still has a defined error
+    };
+
+    // The "Add Domain" dialog requires a redirect URL.
+    if (value.trim() !== "") { // If the user typed something
+      validationResult = isValidRedirectUrl(value); // Now the assignment is type-compatible
+    }
+
+    setNewDomain({
+      ...newDomain,
+      redirect: value, // Store exactly what the user typed
+      isRedirectValid: validationResult.isValid // Update validity based on the new check
+    });
   };
-
-  // The "Add Domain" dialog requires a redirect URL.
-  if (value.trim() !== "") { // If the user typed something
-    validationResult = isValidRedirectUrl(value); // Now the assignment is type-compatible
-  }
-  
-  setNewDomain({
-    ...newDomain,
-    redirect: value, // Store exactly what the user typed
-    isRedirectValid: validationResult.isValid // Update validity based on the new check
-  });
-};
 
   // Function to strip http://, https://, and www.
   const stripUrlPrefixes = (url: string) => {
@@ -618,34 +632,34 @@ export default function DomainsPage() {
   };
 
   // Helper function to validate a full redirect URL
-const isValidRedirectUrl = (url: string): { isValid: boolean; error?: string } => {
-  if (!url) {
-    // This error applies if the redirect URL field cannot be empty.
-    // If empty is allowed (e.g., to remove a redirect), this check might need adjustment based on context.
-    return { isValid: false, error: 'Redirect URL cannot be empty.' };
-  }
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    return { isValid: false, error: 'Redirect URL must start with http:// or https://.' };
-  }
-  try {
-    const parsedUrl = new URL(url); // This checks if the URL string is well-formed
+  const isValidRedirectUrl = (url: string): { isValid: boolean; error?: string } => {
+    if (!url) {
+      // This error applies if the redirect URL field cannot be empty.
+      // If empty is allowed (e.g., to remove a redirect), this check might need adjustment based on context.
+      return { isValid: false, error: 'Redirect URL cannot be empty.' };
+    }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return { isValid: false, error: 'Redirect URL must start with http:// or https://.' };
+    }
+    try {
+      const parsedUrl = new URL(url); // This checks if the URL string is well-formed
 
-    // Your existing 'validateDomain' function (I'm assuming it's defined elsewhere in your code)
-    // can be used to check if the domain part of the URL is valid.
-    const domainValidation = validateDomain(parsedUrl.hostname); 
-    if (!domainValidation.isValid) {
+      // Your existing 'validateDomain' function (I'm assuming it's defined elsewhere in your code)
+      // can be used to check if the domain part of the URL is valid.
+      const domainValidation = validateDomain(parsedUrl.hostname);
+      if (!domainValidation.isValid) {
         return { isValid: false, error: `The domain part of the redirect URL is invalid: ${domainValidation.error || 'Invalid domain structure'}` };
-    }
+      }
 
-    if (url.includes(' ')) { // URLs generally should not contain unencoded spaces
+      if (url.includes(' ')) { // URLs generally should not contain unencoded spaces
         return { isValid: false, error: 'Redirect URL cannot contain spaces. Use %20 if needed.' };
+      }
+      return { isValid: true }; // If all checks pass
+    } catch (_) {
+      // This catches errors if 'new URL(url)' fails, meaning the URL string is badly malformed.
+      return { isValid: false, error: 'Invalid redirect URL format. Please enter a complete URL (e.g., https://example.com/path).' };
     }
-    return { isValid: true }; // If all checks pass
-  } catch (_) {
-    // This catches errors if 'new URL(url)' fails, meaning the URL string is badly malformed.
-    return { isValid: false, error: 'Invalid redirect URL format. Please enter a complete URL (e.g., https://example.com/path).' };
-  }
-};
+  };
   // Function to validate domain
   const validateDomain = (domain: string): { isValid: boolean; error?: string } => {
     // Check for dashes in domain part (before first dot)
@@ -766,7 +780,7 @@ const isValidRedirectUrl = (url: string): { isValid: boolean; error?: string } =
     setSearchQuery(""); // Clear the active search query
     setSearchInput(""); // Clear the displayed value in the input box
     setCurrentPage(1); // Reset to first page
-};
+  };
 
   // Get domain status class
   const getStatusStyle = (status: string, paused: boolean) => {
@@ -1107,35 +1121,35 @@ const isValidRedirectUrl = (url: string): { isValid: boolean; error?: string } =
   // };
   // --- Edit Redirect Dialog Handlers ---
   const handleOpenEditRedirectDialog = async (domain: CloudflareDomain) => { // Make it async
-  setSelectedDomainForEditRedirect(domain);
-  setCurrentRedirectUrlForDialog(domain.redirect_url || "");
-  setNewRedirectUrl(domain.redirect_url || ""); // Pre-fill with current or empty
-  setIsEditRedirectDialogOpen(true); // Open the dialog immediately
+    setSelectedDomainForEditRedirect(domain);
+    setCurrentRedirectUrlForDialog(domain.redirect_url || "");
+    setNewRedirectUrl(domain.redirect_url || ""); // Pre-fill with current or empty
+    setIsEditRedirectDialogOpen(true); // Open the dialog immediately
 
-  // Check and potentially disable existing dynamic redirect rule *before* user edits
-  if (domain.cloudflare_id) {
-    try {
-      const disableResult = await checkAndDisableExistingDynamicRedirect(domain.cloudflare_id);
-      
-      if (disableResult.error) {
-        // Error toast is already shown by checkAndDisableExistingDynamicRedirect
-        console.warn(`[EditRedirect] Problem checking/disabling dynamic redirect: ${disableResult.error}`);
-      } else if (disableResult.disabled) {
-        console.log(`[EditRedirect] Dynamic redirect rule ${disableResult.ruleId} was disabled for domain: ${domain.name}`);
-        // Optionally, you might want to refresh the domain data or redirect_url state here
-        // if the disabled rule was the source of the current redirect_url.
-        // For now, we assume the user will set a new redirect or remove it via the dialog.
-      } else {
-        console.log(`[EditRedirect] Dynamic redirect check completed: ${disableResult.message}`);
-      }
-    } catch (e) {
+    // Check and potentially disable existing dynamic redirect rule *before* user edits
+    if (domain.cloudflare_id) {
+      try {
+        const disableResult = await checkAndDisableExistingDynamicRedirect(domain.cloudflare_id);
+
+        if (disableResult.error) {
+          // Error toast is already shown by checkAndDisableExistingDynamicRedirect
+          console.warn(`[EditRedirect] Problem checking/disabling dynamic redirect: ${disableResult.error}`);
+        } else if (disableResult.disabled) {
+          console.log(`[EditRedirect] Dynamic redirect rule ${disableResult.ruleId} was disabled for domain: ${domain.name}`);
+          // Optionally, you might want to refresh the domain data or redirect_url state here
+          // if the disabled rule was the source of the current redirect_url.
+          // For now, we assume the user will set a new redirect or remove it via the dialog.
+        } else {
+          console.log(`[EditRedirect] Dynamic redirect check completed: ${disableResult.message}`);
+        }
+      } catch (e) {
         console.error("[EditRedirect] Unexpected error calling checkAndDisableExistingDynamicRedirect:", e);
         toast.error("An unexpected error occurred while preparing the redirect editor.");
+      }
+    } else {
+      toast.error("Cannot check for dynamic redirects: Cloudflare Zone ID is missing for this domain.", { duration: 7000 });
     }
-  } else {
-    toast.error("Cannot check for dynamic redirects: Cloudflare Zone ID is missing for this domain.", { duration: 7000 });
-  }
-};
+  };
 
   const handleCloseEditRedirectDialog = () => {
     setIsEditRedirectDialogOpen(false);
@@ -1291,100 +1305,100 @@ const isValidRedirectUrl = (url: string): { isValid: boolean; error?: string } =
   };
   // ---
   const checkAndDisableExistingDynamicRedirect = useCallback(
-  async (zoneId: string): Promise<{ disabled: boolean; ruleId?: string; message?: string; error?: string }> => {
-    if (!zoneId) {
-      const msg = '[DynamicRedirectCheck] Zone ID is missing.';
-      console.warn(msg);
-      return { disabled: false, error: 'Zone ID is missing for check.' };
-    }
+    async (zoneId: string): Promise<{ disabled: boolean; ruleId?: string; message?: string; error?: string }> => {
+      if (!zoneId) {
+        const msg = '[DynamicRedirectCheck] Zone ID is missing.';
+        console.warn(msg);
+        return { disabled: false, error: 'Zone ID is missing for check.' };
+      }
 
-    const checkingToastId = toast.loading(`Checking for existing dynamic redirect rule...`);
+      const checkingToastId = toast.loading(`Checking for existing dynamic redirect rule...`);
 
-    try {
-      // --- Step 1: Fetch existing ruleset for the http_request_dynamic_redirect phase ---
-      const fetchResponse = await fetch(`/api/cloudflare/rulesets/dynamic-redirect?zoneId=${zoneId}`);
-      const fetchData: FetchRulesetApiResponse = await fetchResponse.json();
+      try {
+        // --- Step 1: Fetch existing ruleset for the http_request_dynamic_redirect phase ---
+        const fetchResponse = await fetch(`/api/cloudflare/rulesets/dynamic-redirect?zoneId=${zoneId}`);
+        const fetchData: FetchRulesetApiResponse = await fetchResponse.json();
 
-      if (!fetchResponse.ok) {
+        if (!fetchResponse.ok) {
+          toast.dismiss(checkingToastId);
+          throw new Error(fetchData.error || `Failed to fetch redirect rules (status: ${fetchResponse.status})`);
+        }
+
+        if (!fetchData.success || !fetchData.ruleset) {
+          toast.dismiss(checkingToastId);
+          const msg = fetchData.message || 'No dynamic redirect ruleset found or API error.';
+          console.log('[DynamicRedirectCheck]', msg, fetchData);
+          toast.info(msg); // It's okay if no ruleset exists for this phase
+          return { disabled: false, message: msg };
+        }
+
+        const ruleset: CloudflareRuleset = fetchData.ruleset;
+        const dynamicRedirectRules = ruleset.rules.filter(
+          (rule) => rule.action === 'redirect' // Adjust if your dynamic redirects have a more specific identifier
+        );
+
+        if (dynamicRedirectRules.length === 0) {
+          toast.dismiss(checkingToastId);
+          toast.success('No existing dynamic redirect rule found to disable.');
+          return { disabled: false, message: 'No dynamic redirect rule found.' };
+        }
+
+        if (dynamicRedirectRules.length > 1) {
+          toast.dismiss(checkingToastId);
+          const message = `Multiple (${dynamicRedirectRules.length}) dynamic redirect rules found. Automatic disabling is not supported. Please review manually in Cloudflare.`;
+          toast.error(message, { duration: 10000 });
+          console.warn('[DynamicRedirectCheck]', message, dynamicRedirectRules);
+          return { disabled: false, message };
+        }
+
+        const ruleToUpdate = dynamicRedirectRules[0];
+
+        if (!ruleToUpdate.enabled) {
+          toast.dismiss(checkingToastId);
+          toast.success(`The existing dynamic redirect rule ('${ruleToUpdate.description || ruleToUpdate.id}') is already disabled.`);
+          return { disabled: false, ruleId: ruleToUpdate.id, message: 'Rule already disabled.' };
+        }
+
+        // --- Step 2: Request to disable the rule ---
+        toast.loading(`Found active rule ('${ruleToUpdate.description || ruleToUpdate.id}'). Attempting to disable...`, { id: checkingToastId });
+
+        // Create the payload for updating the ruleset: disable the specific rule
+        const updatedRules = ruleset.rules.map(rule =>
+          rule.id === ruleToUpdate.id ? { ...rule, enabled: false } : rule
+        );
+
+        // The payload for the PUT request to your backend
+        // The backend will then send this to Cloudflare
+        const rulesetUpdatePayload = { ...ruleset, rules: updatedRules }; // Includes the crucial 'version' from the fetched ruleset
+
+        const disableResponse = await fetch(`/api/cloudflare/rulesets/dynamic-redirect`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            zoneId: zoneId,
+            ruleset: rulesetUpdatePayload, // Send the entire modified ruleset object
+          }),
+        });
+
+        const disableData: UpdateRulesetApiResponse = await disableResponse.json();
         toast.dismiss(checkingToastId);
-        throw new Error(fetchData.error || `Failed to fetch redirect rules (status: ${fetchResponse.status})`);
-      }
 
-      if (!fetchData.success || !fetchData.ruleset) {
+        if (!disableResponse.ok || !disableData.success) {
+          throw new Error(disableData.error || `Failed to disable redirect rule (status: ${disableResponse.status})`);
+        }
+
+        toast.success(`Successfully disabled dynamic redirect rule ('${ruleToUpdate.description || ruleToUpdate.id}').`);
+        return { disabled: true, ruleId: ruleToUpdate.id, message: 'Dynamic redirect rule disabled.' };
+
+      } catch (error: any) {
         toast.dismiss(checkingToastId);
-        const msg = fetchData.message || 'No dynamic redirect ruleset found or API error.';
-        console.log('[DynamicRedirectCheck]', msg, fetchData);
-        toast.info(msg); // It's okay if no ruleset exists for this phase
-        return { disabled: false, message: msg };
+        console.error('[DynamicRedirectCheck] Error:', error);
+        const errorMessage = error.message || 'An unknown error occurred while managing dynamic redirect rule.';
+        toast.error(errorMessage, { duration: 10000 });
+        return { disabled: false, error: errorMessage };
       }
-
-      const ruleset: CloudflareRuleset = fetchData.ruleset;
-      const dynamicRedirectRules = ruleset.rules.filter(
-        (rule) => rule.action === 'redirect' // Adjust if your dynamic redirects have a more specific identifier
-      );
-
-      if (dynamicRedirectRules.length === 0) {
-        toast.dismiss(checkingToastId);
-        toast.success('No existing dynamic redirect rule found to disable.');
-        return { disabled: false, message: 'No dynamic redirect rule found.' };
-      }
-
-      if (dynamicRedirectRules.length > 1) {
-        toast.dismiss(checkingToastId);
-        const message = `Multiple (${dynamicRedirectRules.length}) dynamic redirect rules found. Automatic disabling is not supported. Please review manually in Cloudflare.`;
-        toast.error(message, { duration: 10000 });
-        console.warn('[DynamicRedirectCheck]', message, dynamicRedirectRules);
-        return { disabled: false, message };
-      }
-
-      const ruleToUpdate = dynamicRedirectRules[0];
-
-      if (!ruleToUpdate.enabled) {
-        toast.dismiss(checkingToastId);
-        toast.success(`The existing dynamic redirect rule ('${ruleToUpdate.description || ruleToUpdate.id}') is already disabled.`);
-        return { disabled: false, ruleId: ruleToUpdate.id, message: 'Rule already disabled.' };
-      }
-
-      // --- Step 2: Request to disable the rule ---
-      toast.loading(`Found active rule ('${ruleToUpdate.description || ruleToUpdate.id}'). Attempting to disable...`, { id: checkingToastId });
-
-      // Create the payload for updating the ruleset: disable the specific rule
-      const updatedRules = ruleset.rules.map(rule =>
-        rule.id === ruleToUpdate.id ? { ...rule, enabled: false } : rule
-      );
-      
-      // The payload for the PUT request to your backend
-      // The backend will then send this to Cloudflare
-      const rulesetUpdatePayload = { ...ruleset, rules: updatedRules }; // Includes the crucial 'version' from the fetched ruleset
-
-      const disableResponse = await fetch(`/api/cloudflare/rulesets/dynamic-redirect`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          zoneId: zoneId,
-          ruleset: rulesetUpdatePayload, // Send the entire modified ruleset object
-        }),
-      });
-
-      const disableData: UpdateRulesetApiResponse = await disableResponse.json();
-      toast.dismiss(checkingToastId);
-
-      if (!disableResponse.ok || !disableData.success) {
-        throw new Error(disableData.error || `Failed to disable redirect rule (status: ${disableResponse.status})`);
-      }
-
-      toast.success(`Successfully disabled dynamic redirect rule ('${ruleToUpdate.description || ruleToUpdate.id}').`);
-      return { disabled: true, ruleId: ruleToUpdate.id, message: 'Dynamic redirect rule disabled.' };
-
-    } catch (error: any) {
-      toast.dismiss(checkingToastId);
-      console.error('[DynamicRedirectCheck] Error:', error);
-      const errorMessage = error.message || 'An unknown error occurred while managing dynamic redirect rule.';
-      toast.error(errorMessage, { duration: 10000 });
-      return { disabled: false, error: errorMessage };
-    }
-  }, [] // Dependencies: add any external state/props used, e.g., `supabase` if it were used here.
-);
+    }, [] // Dependencies: add any external state/props used, e.g., `supabase` if it were used here.
+  );
   return (
     <DashboardLayout>
       <div className="w-full max-w-full px-4 py-6 md:px-6 lg:px-8">
