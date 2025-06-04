@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
   import { supabaseAdmin } from '../../../lib/supabase-client'; // Keep upstream version
-  import { sendInvitationEmail } from '../../../lib/azure-email';
+  import { sendInvitationEmail } from '../../../lib/resend-email'; 
 
   // Azure Communication Services email client configuration
 // const connectionString = "endpoint=https://sw-01.unitedstates.communication.azure.com/;accesskey=AEukP4bAKqA7qviO1tDeVxTMhzkTpw5ciJl9IhZbFeVOE7OjV9UGJQQJ99AFACULyCpb8TiCAAAAAZCSHrmv"; // Store securely, not hardcoded
