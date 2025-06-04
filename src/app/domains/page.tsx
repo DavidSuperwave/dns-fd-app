@@ -606,26 +606,40 @@ export default function DomainsPage() {
   };
 
   const handleRedirectChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value; // This is what the user typed
+    const userInput = e.target.value;
+    const trimmedUserInput = userInput.trim();
+    let newRedirectValue = userInput; // Default to what user typed
 
-    // Explicitly type validationResult to allow error to be undefined
-    let validationResult: { isValid: boolean; error?: string } = {
-      isValid: false,
-      error: "Redirect URL is required." // Initial state still has a defined error
-    };
-
-    // The "Add Domain" dialog requires a redirect URL.
-    if (value.trim() !== "") { // If the user typed something
-      validationResult = isValidRedirectUrl(value); // Now the assignment is type-compatible
+    if (trimmedUserInput && !trimmedUserInput.startsWith('http://') && !trimmedUserInput.startsWith('https://')) {
+      // If there's content and no protocol, prepend https to the trimmed content
+      newRedirectValue = 'https://' + trimmedUserInput;
     }
+    // Else, if there is a protocol, or if the input is empty/whitespace,
+    // newRedirectValue remains userInput, preserving original spacing for display if desired.
 
-    setNewDomain({
-      ...newDomain,
-      redirect: value, // Store exactly what the user typed
-      isRedirectValid: validationResult.isValid // Update validity based on the new check
-    });
+    // For validation, always use a trimmed version of the URL that's effectively in newRedirectValue.
+    const valueForValidation = newRedirectValue.trim();
+    const validationResult = isValidRedirectUrl(valueForValidation);
+
+    setNewDomain(prev => ({
+      ...prev,
+      redirect: newRedirectValue, // This is what the input field will display
+      isRedirectValid: validationResult.isValid,
+    }));
   };
+  const handleEditDialogRedirectInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const userInput = e.target.value;
+    const trimmedUserInput = userInput.trim();
+    let newRedirectValueForState = userInput; // Default to what user typed
 
+    if (trimmedUserInput && !trimmedUserInput.startsWith('http://') && !trimmedUserInput.startsWith('https://')) {
+      // If there's content and no protocol, prepend https to the trimmed content
+      newRedirectValueForState = 'https://' + trimmedUserInput;
+    }
+    // Else, (protocol exists or input is empty/whitespace) newRedirectValueForState remains userInput.
+    
+    setNewRedirectUrl(newRedirectValueForState);
+  };
   // Function to strip http://, https://, and www.
   const stripUrlPrefixes = (url: string) => {
     return url.replace(/^(https?:\/\/)?(www\.)?/, '');
@@ -1185,7 +1199,7 @@ export default function DomainsPage() {
       const redirectValidationResult = isValidRedirectUrl(targetRedirectUrl);
       if (!redirectValidationResult.isValid) {
         toast.error(redirectValidationResult.error || "Invalid new redirect URL format.");
-        // setIsUpdatingRedirect(false); // This will be handled by the finally block
+        setIsUpdatingRedirect(false); // This will be handled by the finally block
         return; // Stop if validation fails
       }
     }
@@ -2137,7 +2151,7 @@ export default function DomainsPage() {
               <Input
                 id="new-redirect"
                 value={newRedirectUrl}
-                onChange={(e) => setNewRedirectUrl(e.target.value)}
+                onChange={handleEditDialogRedirectInputChange}
                 placeholder="https://new-target.com (or leave blank to remove)"
                 className="col-span-3"
               />
