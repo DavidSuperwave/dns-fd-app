@@ -192,6 +192,7 @@ export default function DomainsPage() {
   const [currentRedirectUrlForDialog, setCurrentRedirectUrlForDialog] = useState<string>("");
   const [newRedirectUrl, setNewRedirectUrl] = useState<string>("");
   const [isUpdatingRedirect, setIsUpdatingRedirect] = useState<boolean>(false);
+  const [selectedUserId, setSelectedUserId] = useState < string | null > (null);
   // ---
   const assignedUsersRef = useRef(assignedUsers); // Add this ref
   const [searchInput, setSearchInput] = useState<string>("");
@@ -222,7 +223,12 @@ export default function DomainsPage() {
   }, [isAssignDialogOpen, loadUsers]);
   // Apply filters to domains - wrapped in useCallback
   // Added dependencies for applyFilters
-
+  useEffect(() => {
+    // Fetch the list of users for the filter dropdown when the component mounts for an admin
+    if (isAdmin) {
+      loadUsers();
+    }
+  }, [isAdmin, loadUsers]);
 
   // Load domains from latest scan
   const loadDomains = useCallback(
@@ -299,7 +305,32 @@ export default function DomainsPage() {
 
           const assignedDomainIds = assignments.map(a => a.domain_id);
           baseQuery = baseQuery.in('id', assignedDomainIds);
+        }else if (isAdmin && selectedUserId) {
+        // NEW: Admin is filtering by a specific user
+        const { data: assignments, error: assignmentError } = await supabase
+          .from('domain_assignments')
+          .select('domain_id')
+          .eq('user_email', selectedUserId) // Filter assignments by the selected user's email
+          .abortSignal(signal ?? new AbortController().signal);
+
+        if (assignmentError) {
+          console.error(`Error fetching domain assignments for ${selectedUserId}:`, assignmentError);
+          setDomains([]);
+          setTotalPages(1);
+          return;
         }
+
+        if (!assignments || assignments.length === 0) {
+          // No domains assigned to this user, show empty list
+          setDomains([]);
+          setResultInfo({ page: 1, per_page: 25, total_pages: 1, count: 0, total_count: 0 });
+          setTotalPages(1);
+          return;
+        }
+        
+        const assignedDomainIds = assignments.map(a => a.domain_id);
+        baseQuery = baseQuery.in('id', assignedDomainIds);
+      }
 
         // Apply search filter
         if (searchQuery.trim()) {
@@ -328,7 +359,7 @@ export default function DomainsPage() {
           // This correctly handles cases where the user explicitly selects "active" or "pending".
           baseQuery = baseQuery.eq('status', statusFilter).eq('paused', false);
         }
-
+        
         // Order and paginate
         baseQuery = baseQuery.order('modified_on', { ascending: false });
 
@@ -375,7 +406,7 @@ export default function DomainsPage() {
         setIsLoading(false);
       }
     },
-    [supabase, isAdmin, user?.email, searchQuery, statusFilter, currentPage]
+    [supabase, isAdmin, user?.email, searchQuery, statusFilter, currentPage, selectedUserId]
   );
   // ...existing code...
 
@@ -794,6 +825,7 @@ export default function DomainsPage() {
     setSearchQuery(""); // Clear the active search query
     setSearchInput(""); // Clear the displayed value in the input box
     setCurrentPage(1); // Reset to first page
+    setSelectedUserId(null);
   };
 
   // Get domain status class
@@ -1589,6 +1621,30 @@ export default function DomainsPage() {
               className="w-full"
             />
           </div>
+          {isAdmin && (
+          <div className="w-full sm:w-48">
+            <Label htmlFor="user-filter" className="sr-only">User</Label>
+            <Select
+              value={selectedUserId || "all"}
+              onValueChange={(value) => {
+                setSelectedUserId(value === "all" ? null : value);
+                setCurrentPage(1); // Reset to first page when filter changes
+              }}
+            >
+              <SelectTrigger id="user-filter" className="w-full">
+                <SelectValue placeholder="Filter by user" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Users</SelectItem>
+                {users.map((user) => (
+                  <SelectItem key={user.id} value={user.email}>
+                    {user.name || user.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
           <div className="w-full sm:w-40">
             <Label htmlFor="status-filter" className="sr-only">Status</Label>
             <Select
@@ -1612,7 +1668,7 @@ export default function DomainsPage() {
           </div>
           <Button variant="outline" onClick={resetFilters} className="sm:w-auto">Reset</Button>
         </div>
-
+        
         {isLoading ? (
           <div className="flex justify-center items-center h-64 bg-background/40 rounded-lg border shadow-sm">
             <div className="text-center space-y-4">
