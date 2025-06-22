@@ -1096,6 +1096,18 @@ export default function DomainsPage() {
           } else {
             toast.error(`Failed to add A record for www.${cloudflareDomainName}.`);
           }
+          const dmarcRecord = {
+            type: "TXT",
+            name: `_dmarc.${cloudflareDomainName}`,
+            content: `v=DMARC1; p=none; rua=mailto:dmarc@${cloudflareDomainName}`,
+            ttl: 1, // 1 for Automatic
+          };
+          const dmarcRecordResult = await createDnsRecord(cloudflareZoneId, dmarcRecord);
+          if (dmarcRecordResult) {
+            toast.success(`DMARC record for ${cloudflareDomainName} added.`);
+          } else {
+            toast.error(`Failed to add DMARC record for ${cloudflareDomainName}.`);
+          }
         } catch (dnsError) {
           console.error('Error adding DNS records:', dnsError);
           toast.error(`Failed to add DNS records for ${cloudflareDomainName}: ${dnsError instanceof Error ? dnsError.message : 'Unknown DNS error'}`);
