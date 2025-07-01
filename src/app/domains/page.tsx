@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { CSVUpload } from "@/components/domains/csv-upload";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
-import { PlusCircle, ExternalLink, Loader2, AlertTriangle, Edit3, Link as LinkIcon } from "lucide-react";
+import { PlusCircle, ExternalLink, Loader2, AlertTriangle, Edit3, Link as LinkIcon, UploadCloud, Rocket} from "lucide-react";
 import { createClient, supabaseAdmin } from "@/lib/supabase-client";
 import {
   Table,
@@ -37,6 +37,9 @@ import {
 import DashboardLayout from "../../components/layout/dashboard-layout";
 import { useAuth } from "../../components/auth/auth-provider";
 import { createDnsRecord } from "../../lib/cloudflare-api";
+// Add this new line to import the Tabs components
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+
 
 // Domain assignment interface
 interface DomainAssignment {
@@ -60,6 +63,7 @@ interface CloudflareDomain {
   has_files?: boolean; // Add this property
   user_id?: string | null; // Add this property
   cloudflare_id?: string | null;
+  deployment_status?: string | null;
 }
 
 // Result info interface from Cloudflare
@@ -196,6 +200,14 @@ export default function DomainsPage() {
   // ---
   const assignedUsersRef = useRef(assignedUsers); // Add this ref
   const [searchInput, setSearchInput] = useState<string>("");
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [isDeployDialogOpen, setIsDeployDialogOpen] = useState(false);
+  const [selectedDomainForDeploy, setSelectedDomainForDeploy] = useState<CloudflareDomain | null>(null);
+  const [deployMode, setDeployMode] = useState<'multiple_names' | 'csv_upload'>('multiple_names');
+  const [namePairs, setNamePairs] = useState([{ first_name: '', last_name: '' }]);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [userCount, setUserCount] = useState<number>(5);
+  const [passwordBaseWord, setPasswordBaseWord] = useState<string>("");
   // Update the ref whenever assignedUsers state changes
   useEffect(() => {
     assignedUsersRef.current = assignedUsers;
@@ -1457,6 +1469,129 @@ export default function DomainsPage() {
       }
     }, [] // Dependencies: add any external state/props used, e.g., `supabase` if it were used here.
   );
+
+  const handleOpenDeployDialog = (domain: CloudflareDomain) => {
+    setSelectedDomainForDeploy(domain);
+    setIsDeployDialogOpen(true);
+    // Reset form state when opening
+    setNamePairs([{ first_name: '', last_name: '' }]);
+    setCsvFile(null);
+    setDeployMode('multiple_names');
+    // Add these lines to reset the new fields
+    setUserCount(5); // Or any default you prefer
+    setPasswordBaseWord("");
+  };
+
+  const handleNamePairChange = (index: number, field: 'first_name' | 'last_name', value: string) => {
+    const updatedPairs = [...namePairs];
+    updatedPairs[index][field] = value;
+    setNamePairs(updatedPairs);
+  };
+
+  const addNamePair = () => {
+    if (namePairs.length < 5) {
+      setNamePairs([...namePairs, { first_name: '', last_name: '' }]);
+    }
+  };
+
+  const removeNamePair = (index: number) => {
+    if (namePairs.length > 1) {
+      const updatedPairs = namePairs.filter((_, i) => i !== index);
+      setNamePairs(updatedPairs);
+    }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.size > 1024 * 1024) { // 1MB limit
+        toast.error("File is too large. Maximum size is 1MB.");
+        return;
+      }
+      if (file.type !== 'text/csv') {
+        toast.error("Invalid file type. Please upload a CSV file.");
+        return;
+      }
+      setCsvFile(file);
+    }
+  };
+
+  const handleDeployDomain = async () => {
+    if (!selectedDomainForDeploy) return;
+
+    // Validation for new fields
+    if (!userCount || userCount <= 0) {
+        toast.error("User count must be a positive number.");
+        return;
+    }
+    if (!passwordBaseWord.trim()) {
+        toast.error("Password Base Word is required.");
+        return;
+    }
+
+    setIsDeploying(true);
+    toast.info(`Starting deployment for ${selectedDomainForDeploy.name}...`);
+
+    try {
+      if (deployMode === 'csv_upload') {
+        // ... existing CSV logic
+        return;
+      }
+      
+      // === REPLACE THE OLD `body` OBJECT WITH THIS NEW ONE ===
+      const body = {
+        domainId: selectedDomainForDeploy.id,
+        parameters: {
+          // --- Static domain info ---
+          domain_name: selectedDomainForDeploy.name,
+          redirect_url: selectedDomainForDeploy.redirect_url || "", // Ensure it's not null
+          
+          // --- Data from the form ---
+          // Using the first name pair for the primary user setup
+          first_name: namePairs[0]?.first_name || '',
+          last_name: namePairs[0]?.last_name || '',
+          
+          // --- New fields from the dialog ---
+          user_count: userCount,
+          password_base_word: passwordBaseWord,
+
+          // Note: Your API requires an `admin_email`. You'll need to source this.
+          // For now, we'll use a placeholder. You might need to add another input for it.
+          // admin_email: "admin-email-placeholder@example.com" 
+        }
+      };
+      // === END OF REPLACEMENT ===
+
+      const response = await fetch('/api/inboxing/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Deployment failed to start.");
+      }
+
+      toast.success(result.message || `Deployment for ${selectedDomainForDeploy.name} has started!`);
+      setIsDeployDialogOpen(false);
+      
+      setDomains(currentDomains =>
+        currentDomains.map(d =>
+          d.id === selectedDomainForDeploy.id
+            ? { ...d, deployment_status: 'Deploying' }
+            : d
+        )
+      );
+
+    } catch (error: any) {
+      console.error("Deployment failed:", error);
+      toast.error(error.message || "An unknown error occurred during deployment.");
+    } finally {
+      setIsDeploying(false);
+    }
+  };
   return (
     <DashboardLayout>
       <div className="w-full max-w-full px-4 py-6 md:px-6 lg:px-8">
@@ -1724,10 +1859,10 @@ export default function DomainsPage() {
                   <TableRow>
                     <TableHead className="w-[14%]">Domain Name</TableHead>
                     <TableHead className="w-[14%]">Redirect</TableHead>
-                    <TableHead className="w-[7%]">Created On</TableHead>
+                    {/* <TableHead className="w-[7%]">Created On</TableHead> */}
                     <TableHead className="w-[9%]">Storage</TableHead>
-                    <TableHead className="w-[7%]">Last Synced</TableHead>
-                    <TableHead className="w-[7%]">Status</TableHead>
+                    {/* <TableHead className="w-[7%]">Last Synced</TableHead> */}
+                    <TableHead className="w-[7%]"> Cloudflare Status</TableHead>
                     <TableHead className="w-[20%]">Assigned User</TableHead>
                     <TableHead className="w-[15%] text-right">Actions</TableHead>
                   </TableRow>
@@ -1798,7 +1933,7 @@ export default function DomainsPage() {
                             <span className="text-gray-500 text-sm">Loading...</span>
                           )}
                         </TableCell>
-                        <TableCell>{formatDate(domain.created_on)}</TableCell>
+                        {/* <TableCell>{formatDate(domain.created_on)}</TableCell> */}
                         <TableCell>
                           <CSVUpload
                             domainId={domain.id}
@@ -1807,7 +1942,7 @@ export default function DomainsPage() {
                             userId={domain.user_id ?? undefined}
                           />
                         </TableCell>
-                        <TableCell>
+                        {/* <TableCell>
                           {isSyncing ? (
                             <span className="text-gray-500 text-sm flex items-center gap-1">
                               <Loader2 className="h-3 w-3 animate-spin" />
@@ -1820,7 +1955,7 @@ export default function DomainsPage() {
                           ) : (
                             <span className="text-gray-500 text-sm">Not synced</span>
                           )}
-                        </TableCell>
+                        </TableCell> */}
                         <TableCell>
                           <span className={getStatusStyle(domain.status, domain.paused)}>
                             {getDomainStatusText(domain.status, domain.paused)}
@@ -1837,6 +1972,22 @@ export default function DomainsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
+                            {
+                              domain.status === 'active' && !domain.deployment_status && (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => handleOpenDeployDialog(domain)}
+                                >
+                                  Deploy to Tenant
+                                </Button>
+                              )
+                            }
+                            {
+                              domain.deployment_status && (
+                                <span className="text-sm font-semibold">{domain.deployment_status}</span>
+                              )
+                            }
                             {/* --- Edit Redirect Button --- */}
                             <Button variant="outline" size="sm" className="px-2 sm:px-3 py-1 text-xs sm:text-sm" onClick={() => handleOpenEditRedirectDialog(domain)}>
                               <Edit3 className="h-3 w-3 sm:mr-1" /> <span className="hidden sm:inline">Edit Redirect</span>
@@ -2243,6 +2394,108 @@ export default function DomainsPage() {
         </DialogContent>
       </Dialog>
       {/* --- End Edit Redirect Dialog --- */}
+      <Dialog open={isDeployDialogOpen} onOpenChange={setIsDeployDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Deploy Domain to Tenant</DialogTitle>
+            <DialogDescription>
+              Deploy <strong>{selectedDomainForDeploy?.name}</strong> to an available Microsoft Tenant.
+              Choose how to create the initial user mailboxes.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Tabs value={deployMode} onValueChange={(value) => setDeployMode(value as any)} className="pt-4">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="multiple_names">Auto-Generate Users</TabsTrigger>
+              <TabsTrigger value="csv_upload">Upload CSV</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="multiple_names" className="pt-4 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Provide 1-5 name pairs to automatically create mailboxes.
+              </p>
+              {namePairs.map((pair, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Input
+                    placeholder="First Name"
+                    value={pair.first_name}
+                    onChange={(e) => handleNamePairChange(index, 'first_name', e.target.value)}
+                  />
+                  <Input
+                    placeholder="Last Name"
+                    value={pair.last_name}
+                    onChange={(e) => handleNamePairChange(index, 'last_name', e.target.value)}
+                  />
+                  {namePairs.length > 1 && (
+                    <Button variant="ghost" size="sm" onClick={() => removeNamePair(index)}>✕</Button>
+                  )}
+                </div>
+              ))}
+              {namePairs.length < 5 && (
+                <Button variant="outline" size="sm" onClick={addNamePair}>
+                  <PlusCircle className="h-4 w-4 mr-2" /> Add Name
+                </Button>
+              )}
+              <div className="pt-4 space-y-4 border-t">
+      <div className="grid grid-cols-2 gap-4">
+          <div>
+              <Label htmlFor="user-count">User Count</Label>
+              <Input
+                  id="user-count"
+                  type="number"
+                  value={userCount}
+                  onChange={(e) => setUserCount(parseInt(e.target.value, 10))}
+                  placeholder="e.g., 5"
+                  className="mt-1"
+              />
+          </div>
+          <div>
+              <Label htmlFor="password-base-word">Password Base Word</Label>
+              <Input
+                  id="password-base-word"
+                  type="text"
+                  value={passwordBaseWord}
+                  onChange={(e) => setPasswordBaseWord(e.target.value)}
+                  placeholder="e.g., Super"
+                  className="mt-1"
+              />
+          </div>
+      </div>
+  </div>
+            </TabsContent>
+
+            <TabsContent value="csv_upload" className="pt-4">
+                <div className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-lg">
+                    <UploadCloud className="w-10 h-10 mb-2 text-gray-400" />
+                    <Label htmlFor="csv-upload" className="font-semibold text-blue-600 cursor-pointer">
+                        {csvFile ? `${csvFile.name} selected` : "Choose a CSV file"}
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-1">Max 1MB. Required columns: DisplayName, EmailAddress, Password</p>
+                    <Input id="csv-upload" type="file" className="sr-only" accept=".csv" onChange={handleFileChange} />
+                </div>
+            </TabsContent>
+          </Tabs>
+
+          <DialogFooter className="pt-6">
+            <Button variant="outline" onClick={() => setIsDeployDialogOpen(false)} disabled={isDeploying}>
+              Cancel
+            </Button>
+            <Button onClick={handleDeployDomain} disabled={isDeploying}>
+              {isDeploying ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Starting Deployment...
+                </>
+              ) : (
+                <>
+                 <Rocket className="h-4 w-4 mr-2" />
+                 Start Deployment
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

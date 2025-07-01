@@ -11,6 +11,7 @@ const nextConfig = {
     CLOUDFLARE_GLOBAL_API_KEY : process.env.CLOUDFLARE_GLOBAL_API_KEY,
     RESEND_API_KEY : process.env.RESEND_API_KEY,
     DEFAULT_SENDER_EMAIL : process.env.DEFAULT_SENDER_EMAIL,
+    INBOXING_API_KEY : process.env.INBOXING_API_KEY,
   },
 }
 
