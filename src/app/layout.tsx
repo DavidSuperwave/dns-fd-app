@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 // Import createServerClient directly from @supabase/ssr
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { AuthProvider } from "../components/auth/auth-provider";
+import { Toaster } from "@/components/ui/sonner"
 
 export const dynamic = 'force-dynamic'; // Ensure layout is dynamic for session checking
 
@@ -69,6 +70,7 @@ export default async function RootLayout({ // Make layout async
         <AuthProvider initialSession={session}>
           {children}
         </AuthProvider>
+        <Toaster richColors position="top-right" />
       </body>
     </html>
   );

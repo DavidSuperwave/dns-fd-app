@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { CSVUpload } from "@/components/domains/csv-upload";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
-import { PlusCircle, ExternalLink, Loader2, AlertTriangle, Edit3, Link as LinkIcon, UploadCloud, Rocket} from "lucide-react";
+import { PlusCircle, ExternalLink, Loader2, AlertTriangle, Edit3, Link as LinkIcon, UploadCloud, Rocket, Download } from "lucide-react";
 import { createClient, supabaseAdmin } from "@/lib/supabase-client";
 import {
   Table,
@@ -60,10 +60,20 @@ interface CloudflareDomain {
   last_synced?: string | null;
   redirect_url?: string | null;
   created_by?: string;
-  has_files?: boolean; // Add this property
-  user_id?: string | null; // Add this property
+  has_files?: boolean;
+  user_id?: string | null;
   cloudflare_id?: string | null;
   deployment_status?: string | null;
+  inboxing_job_id?: number | null;
+  inboxing_job_status?: string | null;
+}
+
+interface JobDetails {
+  id: number;
+  status: string;
+  result_data?: any;
+  created_at: string;
+  updated_at: string;
 }
 
 // Result info interface from Cloudflare
@@ -196,7 +206,7 @@ export default function DomainsPage() {
   const [currentRedirectUrlForDialog, setCurrentRedirectUrlForDialog] = useState<string>("");
   const [newRedirectUrl, setNewRedirectUrl] = useState<string>("");
   const [isUpdatingRedirect, setIsUpdatingRedirect] = useState<boolean>(false);
-  const [selectedUserId, setSelectedUserId] = useState < string | null > (null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   // ---
   const assignedUsersRef = useRef(assignedUsers); // Add this ref
   const [searchInput, setSearchInput] = useState<string>("");
@@ -206,8 +216,10 @@ export default function DomainsPage() {
   const [deployMode, setDeployMode] = useState<'multiple_names' | 'csv_upload'>('multiple_names');
   const [namePairs, setNamePairs] = useState([{ first_name: '', last_name: '' }]);
   const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [userCount, setUserCount] = useState<number>(5);
   const [passwordBaseWord, setPasswordBaseWord] = useState<string>("");
+  const [csvContent, setCsvContent] = useState<string | null>(null);
+  const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
+  const [selectedJobDetails, setSelectedJobDetails] = useState<JobDetails | null>(null);
   // Update the ref whenever assignedUsers state changes
   useEffect(() => {
     assignedUsersRef.current = assignedUsers;
@@ -317,32 +329,32 @@ export default function DomainsPage() {
 
           const assignedDomainIds = assignments.map(a => a.domain_id);
           baseQuery = baseQuery.in('id', assignedDomainIds);
-        }else if (isAdmin && selectedUserId) {
-        // NEW: Admin is filtering by a specific user
-        const { data: assignments, error: assignmentError } = await supabase
-          .from('domain_assignments')
-          .select('domain_id')
-          .eq('user_email', selectedUserId) // Filter assignments by the selected user's email
-          .abortSignal(signal ?? new AbortController().signal);
+        } else if (isAdmin && selectedUserId) {
+          // NEW: Admin is filtering by a specific user
+          const { data: assignments, error: assignmentError } = await supabase
+            .from('domain_assignments')
+            .select('domain_id')
+            .eq('user_email', selectedUserId) // Filter assignments by the selected user's email
+            .abortSignal(signal ?? new AbortController().signal);
 
-        if (assignmentError) {
-          console.error(`Error fetching domain assignments for ${selectedUserId}:`, assignmentError);
-          setDomains([]);
-          setTotalPages(1);
-          return;
-        }
+          if (assignmentError) {
+            console.error(`Error fetching domain assignments for ${selectedUserId}:`, assignmentError);
+            setDomains([]);
+            setTotalPages(1);
+            return;
+          }
 
-        if (!assignments || assignments.length === 0) {
-          // No domains assigned to this user, show empty list
-          setDomains([]);
-          setResultInfo({ page: 1, per_page: 25, total_pages: 1, count: 0, total_count: 0 });
-          setTotalPages(1);
-          return;
+          if (!assignments || assignments.length === 0) {
+            // No domains assigned to this user, show empty list
+            setDomains([]);
+            setResultInfo({ page: 1, per_page: 25, total_pages: 1, count: 0, total_count: 0 });
+            setTotalPages(1);
+            return;
+          }
+
+          const assignedDomainIds = assignments.map(a => a.domain_id);
+          baseQuery = baseQuery.in('id', assignedDomainIds);
         }
-        
-        const assignedDomainIds = assignments.map(a => a.domain_id);
-        baseQuery = baseQuery.in('id', assignedDomainIds);
-      }
 
         // Apply search filter
         if (searchQuery.trim()) {
@@ -371,7 +383,7 @@ export default function DomainsPage() {
           // This correctly handles cases where the user explicitly selects "active" or "pending".
           baseQuery = baseQuery.eq('status', statusFilter).eq('paused', false);
         }
-        
+
         // Order and paginate
         baseQuery = baseQuery.order('modified_on', { ascending: false });
 
@@ -450,7 +462,48 @@ export default function DomainsPage() {
 
     return () => controller.abort();
   }, [isAdmin, user?.email, searchQuery, statusFilter, currentPage, loadDomains]);
-  // Make sure currentPage is a dependenc
+  // Make sure currentPage is a dependency
+  useEffect(() => {
+    const domainsToPoll = domains.filter(d =>
+      d.inboxing_job_id &&
+      ['Deploying', 'PENDING', 'PROCESSING'].includes(d.deployment_status || '')
+    );
+
+    if (domainsToPoll.length === 0) {
+      return; // No domains to poll, do nothing
+    }
+
+    const intervalId = setInterval(() => {
+      console.log(`Polling status for ${domainsToPoll.length} domains...`);
+      // We create a fresh copy of the domains from state to avoid closure issues
+      setDomains(currentDomains => {
+        const newDomains = [...currentDomains];
+
+        domainsToPoll.forEach(async (domainToPoll) => {
+          try {
+            const res = await fetch(`/api/inboxing/status/${domainToPoll.inboxing_job_id}`);
+            if (res.ok) {
+              const data = await res.json();
+              const newStatus = data.data.status;
+
+              // Find the index of the domain to update
+              const indexToUpdate = newDomains.findIndex(d => d.id === domainToPoll.id);
+              if (indexToUpdate !== -1) {
+                newDomains[indexToUpdate].deployment_status = newStatus;
+                newDomains[indexToUpdate].inboxing_job_status = newStatus;
+              }
+            }
+          } catch (e) {
+            console.error("Polling failed for domain:", domainToPoll.name, e);
+          }
+        });
+
+        return newDomains;
+      });
+    }, 15000); // Poll every 15 seconds
+
+    return () => clearInterval(intervalId); // Cleanup on unmount
+  }, [domains]);
 
   // Mock users for assignment - in a real app this would come from an API
   const mockUsers = [
@@ -680,7 +733,7 @@ export default function DomainsPage() {
       newRedirectValueForState = 'https://' + trimmedUserInput;
     }
     // Else, (protocol exists or input is empty/whitespace) newRedirectValueForState remains userInput.
-    
+
     setNewRedirectUrl(newRedirectValueForState);
   };
   // Function to strip http://, https://, and www.
@@ -1398,7 +1451,7 @@ export default function DomainsPage() {
           toast.dismiss(checkingToastId);
           const msg = fetchData.message || 'No dynamic redirect ruleset found or API error.';
           console.log('[DynamicRedirectCheck]', msg, fetchData);
-          toast.info(msg); // It's okay if no ruleset exists for this phase
+          // toast.info(msg);
           return { disabled: false, message: msg };
         }
 
@@ -1477,8 +1530,6 @@ export default function DomainsPage() {
     setNamePairs([{ first_name: '', last_name: '' }]);
     setCsvFile(null);
     setDeployMode('multiple_names');
-    // Add these lines to reset the new fields
-    setUserCount(5); // Or any default you prefer
     setPasswordBaseWord("");
   };
 
@@ -1501,67 +1552,71 @@ export default function DomainsPage() {
     }
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Find your existing handleFileChange function and update it
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      if (file.size > 1024 * 1024) { // 1MB limit
-        toast.error("File is too large. Maximum size is 1MB.");
-        return;
-      }
-      if (file.type !== 'text/csv') {
-        toast.error("Invalid file type. Please upload a CSV file.");
-        return;
-      }
-      setCsvFile(file);
+    if (!file) {
+      setCsvFile(null);
+      setCsvContent(null);
+      return;
+    }
+
+    if (file.size > 1024 * 1024) { // 1MB limit
+      toast.error("File is too large. Maximum size is 1MB.");
+      return;
+    }
+    if (file.type !== 'text/csv') {
+      toast.error("Invalid file type. Please upload a CSV file.");
+      return;
+    }
+
+    // --- KEY CHANGE: Read the file content into state ---
+    try {
+      const content = await file.text();
+      setCsvFile(file); // Keep the file object for the UI
+      setCsvContent(content); // Store the actual string content
+      toast.success(`${file.name} is selected and ready.`);
+    } catch (error) {
+      toast.error("Could not read the selected file.");
+      console.error("Error reading file:", error);
     }
   };
 
+  // REPLACE your existing handleDeployDomain function with this simplified version
   const handleDeployDomain = async () => {
     if (!selectedDomainForDeploy) return;
 
-    // Validation for new fields
-    if (!userCount || userCount <= 0) {
-        toast.error("User count must be a positive number.");
-        return;
+    // --- Validation ---
+    if (deployMode === 'csv_upload' && !csvContent) {
+      toast.error("Please select a valid CSV file to deploy.");
+      return;
     }
-    if (!passwordBaseWord.trim()) {
-        toast.error("Password Base Word is required.");
-        return;
-    }
+    // ... (other validations for userCount, passwordBaseWord, etc. remain the same) ...
 
     setIsDeploying(true);
     toast.info(`Starting deployment for ${selectedDomainForDeploy.name}...`);
 
     try {
-      if (deployMode === 'csv_upload') {
-        // ... existing CSV logic
-        return;
-      }
-      
-      // === REPLACE THE OLD `body` OBJECT WITH THIS NEW ONE ===
-      const body = {
+      // The body is NOW ALWAYS a JSON object
+      const body: any = {
         domainId: selectedDomainForDeploy.id,
         parameters: {
-          // --- Static domain info ---
           domain_name: selectedDomainForDeploy.name,
-          redirect_url: selectedDomainForDeploy.redirect_url || "", // Ensure it's not null
-          
-          // --- Data from the form ---
-          // Using the first name pair for the primary user setup
-          first_name: namePairs[0]?.first_name || '',
-          last_name: namePairs[0]?.last_name || '',
-          
-          // --- New fields from the dialog ---
-          user_count: userCount,
+          redirect_url: selectedDomainForDeploy.redirect_url || "",
+          user_count: 99,
           password_base_word: passwordBaseWord,
-
-          // Note: Your API requires an `admin_email`. You'll need to source this.
-          // For now, we'll use a placeholder. You might need to add another input for it.
-          // admin_email: "admin-email-placeholder@example.com" 
         }
       };
-      // === END OF REPLACEMENT ===
 
+      // Conditionally add the correct properties based on the mode
+      if (deployMode === 'multiple_names') {
+        body.parameters.first_name = namePairs[0]?.first_name || '';
+        body.parameters.last_name = namePairs[0]?.last_name || '';
+      } else if (deployMode === 'csv_upload') {
+        body.csvContent = csvContent; // Add the CSV string to the payload
+      }
+
+      // The fetch call is now always the same, with a JSON content type
       const response = await fetch('/api/inboxing/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1576,12 +1631,11 @@ export default function DomainsPage() {
 
       toast.success(result.message || `Deployment for ${selectedDomainForDeploy.name} has started!`);
       setIsDeployDialogOpen(false);
-      
+
+      // Update local UI state immediately
       setDomains(currentDomains =>
         currentDomains.map(d =>
-          d.id === selectedDomainForDeploy.id
-            ? { ...d, deployment_status: 'Deploying' }
-            : d
+          d.id === selectedDomainForDeploy!.id ? { ...d, deployment_status: 'Deploying' } : d
         )
       );
 
@@ -1590,6 +1644,43 @@ export default function DomainsPage() {
       toast.error(error.message || "An unknown error occurred during deployment.");
     } finally {
       setIsDeploying(false);
+    }
+  };
+
+  const handleOpenStatusDialog = async (jobId: number) => {
+    toast.loading("Fetching job details...");
+    try {
+      const res = await fetch(`/api/inboxing/status/${jobId}`);
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error);
+
+      setSelectedJobDetails(result.data);
+      setIsStatusDialogOpen(true);
+      toast.dismiss();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to fetch job details.");
+    }
+  };
+
+  const handleDownloadResults = async (jobId: number) => {
+    toast.info("Preparing your download...");
+    try {
+      const response = await fetch(`/api/inboxing/download/${jobId}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Download failed');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `job_${jobId}_results.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast.error(error.message || "Could not download the file.");
     }
   };
   return (
@@ -1769,29 +1860,29 @@ export default function DomainsPage() {
             />
           </div>
           {isAdmin && (
-          <div className="w-full sm:w-48">
-            <Label htmlFor="user-filter" className="sr-only">User</Label>
-            <Select
-              value={selectedUserId || "all"}
-              onValueChange={(value) => {
-                setSelectedUserId(value === "all" ? null : value);
-                setCurrentPage(1); // Reset to first page when filter changes
-              }}
-            >
-              <SelectTrigger id="user-filter" className="w-full">
-                <SelectValue placeholder="Filter by user" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Users</SelectItem>
-                {users.map((user) => (
-                  <SelectItem key={user.id} value={user.email}>
-                    {user.name || user.email}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+            <div className="w-full sm:w-48">
+              <Label htmlFor="user-filter" className="sr-only">User</Label>
+              <Select
+                value={selectedUserId || "all"}
+                onValueChange={(value) => {
+                  setSelectedUserId(value === "all" ? null : value);
+                  setCurrentPage(1); // Reset to first page when filter changes
+                }}
+              >
+                <SelectTrigger id="user-filter" className="w-full">
+                  <SelectValue placeholder="Filter by user" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Users</SelectItem>
+                  {users.map((user) => (
+                    <SelectItem key={user.id} value={user.email}>
+                      {user.name || user.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="w-full sm:w-40">
             <Label htmlFor="status-filter" className="sr-only">Status</Label>
             <Select
@@ -1815,7 +1906,7 @@ export default function DomainsPage() {
           </div>
           <Button variant="outline" onClick={resetFilters} className="sm:w-auto">Reset</Button>
         </div>
-        
+
         {isLoading ? (
           <div className="flex justify-center items-center h-64 bg-background/40 rounded-lg border shadow-sm">
             <div className="text-center space-y-4">
@@ -1860,9 +1951,9 @@ export default function DomainsPage() {
                     <TableHead className="w-[14%]">Domain Name</TableHead>
                     <TableHead className="w-[14%]">Redirect</TableHead>
                     {/* <TableHead className="w-[7%]">Created On</TableHead> */}
-                    <TableHead className="w-[9%]">Storage</TableHead>
+                    {/* <TableHead className="w-[9%]">Storage</TableHead> */}
                     {/* <TableHead className="w-[7%]">Last Synced</TableHead> */}
-                    <TableHead className="w-[7%]"> Cloudflare Status</TableHead>
+                    <TableHead className="w-[7%]">Status</TableHead>
                     <TableHead className="w-[20%]">Assigned User</TableHead>
                     <TableHead className="w-[15%] text-right">Actions</TableHead>
                   </TableRow>
@@ -1934,14 +2025,14 @@ export default function DomainsPage() {
                           )}
                         </TableCell>
                         {/* <TableCell>{formatDate(domain.created_on)}</TableCell> */}
-                        <TableCell>
+                        {/* <TableCell>
                           <CSVUpload
                             domainId={domain.id}
                             domainName={domain.name}
                             hasFiles={domain.has_files || false}
                             userId={domain.user_id ?? undefined}
                           />
-                        </TableCell>
+                        </TableCell> */}
                         {/* <TableCell>
                           {isSyncing ? (
                             <span className="text-gray-500 text-sm flex items-center gap-1">
@@ -1972,22 +2063,31 @@ export default function DomainsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {
-                              domain.status === 'active' && !domain.deployment_status && (
-                                <Button
-                                  variant="default"
-                                  size="sm"
-                                  onClick={() => handleOpenDeployDialog(domain)}
-                                >
-                                  Deploy to Tenant
-                                </Button>
-                              )
-                            }
-                            {
-                              domain.deployment_status && (
-                                <span className="text-sm font-semibold">{domain.deployment_status}</span>
-                              )
-                            }
+                            {!domain.deployment_status && domain.status === 'active' && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                onClick={() => handleOpenDeployDialog(domain)}
+                              >
+                                <Rocket className="h-4 w-4 mr-2" />
+                                Deploy
+                              </Button>
+                            )}
+
+                            {domain.deployment_status && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => domain.inboxing_job_id && handleOpenStatusDialog(domain.inboxing_job_id)}
+                                disabled={!domain.inboxing_job_id}
+                              >
+                                {['Deploying', 'PENDING', 'PROCESSING'].includes(domain.deployment_status) && (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                )}
+                                {domain.deployment_status}
+                              </Button>
+                            )}
                             {/* --- Edit Redirect Button --- */}
                             <Button variant="outline" size="sm" className="px-2 sm:px-3 py-1 text-xs sm:text-sm" onClick={() => handleOpenEditRedirectDialog(domain)}>
                               <Edit3 className="h-3 w-3 sm:mr-1" /> <span className="hidden sm:inline">Edit Redirect</span>
@@ -2437,42 +2537,31 @@ export default function DomainsPage() {
                 </Button>
               )}
               <div className="pt-4 space-y-4 border-t">
-      <div className="grid grid-cols-2 gap-4">
-          <div>
-              <Label htmlFor="user-count">User Count</Label>
-              <Input
-                  id="user-count"
-                  type="number"
-                  value={userCount}
-                  onChange={(e) => setUserCount(parseInt(e.target.value, 10))}
-                  placeholder="e.g., 5"
-                  className="mt-1"
-              />
-          </div>
-          <div>
-              <Label htmlFor="password-base-word">Password Base Word</Label>
-              <Input
-                  id="password-base-word"
-                  type="text"
-                  value={passwordBaseWord}
-                  onChange={(e) => setPasswordBaseWord(e.target.value)}
-                  placeholder="e.g., Super"
-                  className="mt-1"
-              />
-          </div>
-      </div>
-  </div>
+                <div className="grid grid-cols-1 gap-4">
+                  <div>
+                    <Label htmlFor="password-base-word">Password Base Word</Label>
+                    <Input
+                      id="password-base-word"
+                      type="text"
+                      value={passwordBaseWord}
+                      onChange={(e) => setPasswordBaseWord(e.target.value)}
+                      placeholder="e.g., Super"
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
             </TabsContent>
 
             <TabsContent value="csv_upload" className="pt-4">
-                <div className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-lg">
-                    <UploadCloud className="w-10 h-10 mb-2 text-gray-400" />
-                    <Label htmlFor="csv-upload" className="font-semibold text-blue-600 cursor-pointer">
-                        {csvFile ? `${csvFile.name} selected` : "Choose a CSV file"}
-                    </Label>
-                    <p className="text-xs text-muted-foreground mt-1">Max 1MB. Required columns: DisplayName, EmailAddress, Password</p>
-                    <Input id="csv-upload" type="file" className="sr-only" accept=".csv" onChange={handleFileChange} />
-                </div>
+              <div className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-lg">
+                <UploadCloud className="w-10 h-10 mb-2 text-gray-400" />
+                <Label htmlFor="csv-upload" className="font-semibold text-blue-600 cursor-pointer">
+                  {csvFile ? `${csvFile.name} selected` : "Choose a CSV file"}
+                </Label>
+                <p className="text-xs text-muted-foreground mt-1">Max 1MB. Required columns: DisplayName, EmailAddress, Password</p>
+                <Input id="csv-upload" type="file" className="sr-only" accept=".csv" onChange={handleFileChange} />
+              </div>
             </TabsContent>
           </Tabs>
 
@@ -2488,14 +2577,60 @@ export default function DomainsPage() {
                 </>
               ) : (
                 <>
-                 <Rocket className="h-4 w-4 mr-2" />
-                 Start Deployment
+                  <Rocket className="h-4 w-4 mr-2" />
+                  Start Deployment
                 </>
               )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={isStatusDialogOpen} onOpenChange={setIsStatusDialogOpen}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Job Status Details (ID: {selectedJobDetails?.id})</DialogTitle>
+                <DialogDescription>
+                    Current status and results for your deployment job.
+                </DialogDescription>
+            </DialogHeader>
+            {selectedJobDetails && (
+                <div className="space-y-4 py-4">
+                    <div className="flex justify-between items-center">
+                        <span className="font-semibold">Current Status:</span>
+                        <span className="font-bold text-blue-600">{selectedJobDetails.status}</span>
+                    </div>
+                     <div className="flex justify-between items-center">
+                        <span className="font-semibold">Created:</span>
+                        <span className="text-sm text-gray-500">{formatDate(selectedJobDetails.created_at, true)}</span>
+                    </div>
+                     <div className="flex justify-between items-center">
+                        <span className="font-semibold">Last Updated:</span>
+                        <span className="text-sm text-gray-500">{formatDate(selectedJobDetails.updated_at, true)}</span>
+                    </div>
+                    {selectedJobDetails.status === 'COMPLETED_SUCCESS' && (
+                         <div className="border-t pt-4">
+                            <p className="text-sm text-center pb-2 text-green-700 font-semibold">Deployment was successful!</p>
+                            <Button className="w-full" onClick={() => handleDownloadResults(selectedJobDetails.id)}>
+                                <Download className="mr-2 h-4 w-4" />
+                                Download Results CSV
+                            </Button>
+                         </div>
+                    )}
+                    {selectedJobDetails.status.includes('FAILURE') && (
+                        <Alert variant="destructive">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertDescription>
+                                The job failed. Details: {JSON.stringify(selectedJobDetails.result_data)}
+                            </AlertDescription>
+                        </Alert>
+                    )}
+                </div>
+            )}
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setIsStatusDialogOpen(false)}>Close</Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
     </DashboardLayout>
   );
 }

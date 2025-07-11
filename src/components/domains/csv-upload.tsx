@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { createClient } from '@/lib/supabase-client'; // Import createClient, removed supabaseAdmin
 import { toast } from 'sonner';
 import { FileIcon, Loader2, Download } from 'lucide-react';
-import { validateCsvContent } from '@/lib/csv-validator';
+import { validateCsvForDeployment } from '@/lib/csv-validator';
 import { CsvValidationDialog } from './csv-validation-dialog';
 
 interface CSVFile {
@@ -167,7 +167,7 @@ export function CSVUpload({ domainId, domainName, hasFiles: initialHasFiles }: C
       console.log('[handleFileChange] Reading file content...'); // Log 4
       const content = await file.text();
       console.log('[handleFileChange] File content read. Validating...'); // Log 5
-      const validation = await validateCsvContent(content);
+      const validation = await validateCsvForDeployment(content);
       console.log('[handleFileChange] Validation result:', validation); // Log 6
 
       if (validation.hasErrors) {
