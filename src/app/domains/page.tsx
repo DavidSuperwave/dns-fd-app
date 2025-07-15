@@ -213,7 +213,7 @@ export default function DomainsPage() {
   const [isDeploying, setIsDeploying] = useState(false);
   const [isDeployDialogOpen, setIsDeployDialogOpen] = useState(false);
   const [selectedDomainForDeploy, setSelectedDomainForDeploy] = useState<CloudflareDomain | null>(null);
-  const [deployMode, setDeployMode] = useState<'multiple_names' | 'csv_upload'>('multiple_names');
+  const [deployMode, setDeployMode] = useState<'multiple_names' | 'csv_upload'>('csv_upload');
   const [namePairs, setNamePairs] = useState([{ first_name: '', last_name: '' }]);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [passwordBaseWord, setPasswordBaseWord] = useState<string>("");
@@ -574,7 +574,7 @@ export default function DomainsPage() {
         console.log('[loadAssignedUsers] Fetch aborted.');
       } else {
         console.error('[loadAssignedUsers] Error loading assigned users:', error);
-        toast.error('Failed to load user assignments for domains.');
+        // toast.error('Failed to load user assignments for domains.');
       }
     }
   }, [isAdmin, user?.email, supabase]); // Added supabase to dependency array
@@ -1529,7 +1529,7 @@ export default function DomainsPage() {
     // Reset form state when opening
     setNamePairs([{ first_name: '', last_name: '' }]);
     setCsvFile(null);
-    setDeployMode('multiple_names');
+    setDeployMode('csv_upload');
     setPasswordBaseWord("");
   };
 
@@ -2075,16 +2075,16 @@ export default function DomainsPage() {
                               </Button>
                             )}
 
-                            {domain.deployment_status && (
+                            {domain.deployment_status && domain.deployment_status !='Deployed_old' && (
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => domain.inboxing_job_id && handleOpenStatusDialog(domain.inboxing_job_id)}
                                 disabled={!domain.inboxing_job_id}
                               >
-                                {['Deploying', 'PENDING', 'PROCESSING'].includes(domain.deployment_status) && (
+                                {/* {['Deploying', 'PENDING', 'PROCESSING'].includes(domain.deployment_status) && (
                                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                )}
+                                )} */}
                                 {domain.deployment_status}
                               </Button>
                             )}
@@ -2506,10 +2506,19 @@ export default function DomainsPage() {
 
           <Tabs value={deployMode} onValueChange={(value) => setDeployMode(value as any)} className="pt-4">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="multiple_names">Auto-Generate Users</TabsTrigger>
               <TabsTrigger value="csv_upload">Upload CSV</TabsTrigger>
+              <TabsTrigger value="multiple_names">Auto-Generate Users</TabsTrigger>
             </TabsList>
-
+              <TabsContent value="csv_upload" className="pt-4">
+              <div className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-lg">
+                <UploadCloud className="w-10 h-10 mb-2 text-gray-400" />
+                <Label htmlFor="csv-upload" className="font-semibold text-blue-600 cursor-pointer">
+                  {csvFile ? `${csvFile.name} selected` : "Choose a CSV file"}
+                </Label>
+                <p className="text-xs text-muted-foreground mt-1">Max 1MB. Required columns: DisplayName, EmailAddress, Password</p>
+                <Input id="csv-upload" type="file" className="sr-only" accept=".csv" onChange={handleFileChange} />
+              </div>
+            </TabsContent>
             <TabsContent value="multiple_names" className="pt-4 space-y-4">
               <p className="text-sm text-muted-foreground">
                 Provide 1-5 name pairs to automatically create mailboxes.
@@ -2553,16 +2562,7 @@ export default function DomainsPage() {
               </div>
             </TabsContent>
 
-            <TabsContent value="csv_upload" className="pt-4">
-              <div className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-lg">
-                <UploadCloud className="w-10 h-10 mb-2 text-gray-400" />
-                <Label htmlFor="csv-upload" className="font-semibold text-blue-600 cursor-pointer">
-                  {csvFile ? `${csvFile.name} selected` : "Choose a CSV file"}
-                </Label>
-                <p className="text-xs text-muted-foreground mt-1">Max 1MB. Required columns: DisplayName, EmailAddress, Password</p>
-                <Input id="csv-upload" type="file" className="sr-only" accept=".csv" onChange={handleFileChange} />
-              </div>
-            </TabsContent>
+            
           </Tabs>
 
           <DialogFooter className="pt-6">

@@ -152,6 +152,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   >
                     Cron Monitor
                   </NavItem>
+                  <NavItem
+                    href="/tenants"
+                    active={pathname === "/tenants"}
+                  >
+                    Tenants
+                  </NavItem>
                 </>
               )}
               <NavItem href="/settings" active={pathname === "/settings"}>

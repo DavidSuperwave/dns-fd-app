@@ -23,10 +23,10 @@ const colors = {
 
 // Connection details from environment variables
 const dbConfig = {
-  host: process.env.POSTGRES_HOST || 'db.zfwaqmkqqykfptczwqwo.supabase.co',
-  database: process.env.POSTGRES_DATABASE || 'postgres',
-  user: process.env.POSTGRES_USER || 'postgres',
-  password: process.env.POSTGRES_PASSWORD || 'H23SPdn5X2Yt30xs',
+  host: process.env.POSTGRES_HOST,
+  database: process.env.POSTGRES_DATABASE ,
+  user: process.env.POSTGRES_USER ,
+  password: process.env.POSTGRES_PASSWORD,
   port: 5432,
   ssl: {
     rejectUnauthorized: false // Required for Supabase connections

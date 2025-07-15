@@ -1,7 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 
 // Supabase connection details
-const supabaseUrl = 'https://zfwaqmkqqykfptczwqwo.supabase.co';
+const supabaseUrl = '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Create Supabase client with service role key

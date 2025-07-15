@@ -3,12 +3,12 @@ require('dotenv').config({ path: '.env.local' });
 const fetch = require('node-fetch');
 
 // Supabase credentials
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zfwaqmkqqykfptczwqwo.supabase.co';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Admin user credentials
-const ADMIN_EMAIL = 'management@superwave.ai';
-const ADMIN_PASSWORD = 'hmn7pkq.XBH9yrq_vbk';
+const ADMIN_EMAIL = '';
+const ADMIN_PASSWORD = '';
 
 console.log('Supabase URL:', SUPABASE_URL);
 console.log('Setting up admin user...');

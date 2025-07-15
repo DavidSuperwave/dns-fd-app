@@ -1,6 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
+function mapToUiStatus(inboxingStatus: string): string {
+    switch (inboxingStatus) {
+        case 'COMPLETED_SUCCESS':
+        case 'COMPLETED_WITH_ERRORS':
+            return 'Deployed';
+        
+        case 'COMPLETED_FAILURE':
+            return 'Failed';
+            
+        case 'PENDING':
+        case 'QUEUED':
+        case 'PROCESSING':
+        case 'WAITING_FOR_CONFIRMATION':
+        default:
+            return 'Pending';
+    }
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ jobId: string }> }
@@ -23,9 +41,10 @@ export async function GET(
 
     // Persist the latest status to our database
     if (newStatus) {
+      const uiStatus = mapToUiStatus(newStatus);
       await supabase
         .from('domains')
-        .update({ inboxing_job_status: newStatus, deployment_status: newStatus })
+        .update({ inboxing_job_status: newStatus, deployment_status: uiStatus })
         .eq('inboxing_job_id', jobId);
     }
 
