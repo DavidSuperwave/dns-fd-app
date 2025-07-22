@@ -56,7 +56,11 @@ export async function POST(request: Request) {
       console.log(`Attempting deployment to tenant: ${tenant.admin_email}`);
       let jobResponse;
       
-      const finalParameters = { ...parameters, domain_name: validatedDomain, admin_email: tenant.admin_email };
+      const finalParameters = { ...parameters, domain_name: validatedDomain, admin_email: tenant.admin_email,
+        cloudflare_email: process.env.CLOUDFLARE_AUTH_EMAIL,
+        cloudflare_account_id: process.env.CLOUDFLARE_ACCOUNT_ID,
+        cloudflare_api_key: process.env.CLOUDFLARE_GLOBAL_API_KEY,
+       };
 
       if (finalCsvContent) {
         const formData = new FormData();
