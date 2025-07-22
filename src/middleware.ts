@@ -118,7 +118,8 @@ export async function middleware(request: NextRequest) {
     '/settings',
     '/users',
     '/dns-records',
-    '/tenants'
+    '/tenants',
+    '/metrics'
   ];
 
   // Define public paths that don't require authentication
