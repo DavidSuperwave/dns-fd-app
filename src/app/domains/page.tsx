@@ -523,6 +523,10 @@ export default function DomainsPage() {
   const BATCH_SIZE_ASSIGNMENTS = 1000; // Standard Supabase limit, adjust if needed
 
   const loadAssignedUsers = useCallback(async (signal?: AbortSignal) => {
+    // Create a controller that will be used if no signal is provided
+    const controller = signal ? undefined : new AbortController();
+    const abortSignal = signal || controller?.signal;
+
     try {
       let allAssignments: DomainAssignment[] = [];
       let offset = 0;
@@ -531,11 +535,16 @@ export default function DomainsPage() {
       console.log('[loadAssignedUsers] Starting to fetch all domain assignments...');
 
       while (hasMore) {
+        // Check if the operation was aborted before making the request
+        if (abortSignal?.aborted) {
+          throw new Error('AbortError');
+        }
+
         const { data: batch, error: batchError } = await supabase
           .from('domain_assignments')
           .select('domain_id, user_email')
           .range(offset, offset + BATCH_SIZE_ASSIGNMENTS - 1)
-          .abortSignal(signal ?? new AbortController().signal);
+          .abortSignal(abortSignal as AbortSignal);
 
         if (batchError) {
           console.error(`[loadAssignedUsers] Error fetching batch of assignments (offset: ${offset}):`, batchError);

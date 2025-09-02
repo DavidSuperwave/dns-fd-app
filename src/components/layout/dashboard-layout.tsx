@@ -8,6 +8,7 @@ import { usePathname, useRouter } from "next/navigation";
 import LogoutButton from "../auth/logout-button";
 import { useAuth } from "../auth/auth-provider";
 import { ScanStatusIndicator } from "../scan/scan-status-indicator";
+import { PanelSwitcher } from "./panel-switcher";
 // Removed unused Clock import
 
 // Create a scan context to share scan state across components
@@ -141,6 +142,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <NavItem href="/domains" active={pathname === "/domains"}>
                 Domains
               </NavItem>
+              <NavItem href="/community" active={pathname === "/community"}>
+                Community
+              </NavItem>
               {isAdmin && (
                 <>
                   <NavItem href="/users" active={pathname === "/users"}>
@@ -208,6 +212,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       
       {/* Render the scan status indicator - will only be visible during scans */}
       <ScanStatusIndicator />
+      
+      {/* Panel switcher for admin users */}
+      <PanelSwitcher />
     </div>
     </ScanContext.Provider>
   );

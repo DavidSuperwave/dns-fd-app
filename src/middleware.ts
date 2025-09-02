@@ -76,12 +76,16 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getSession();
 
   let userIsActive = false; // Default to inactive
+  let isAdmin = false; // Default to non-admin
 
   if (sessionError) {
     console.error(`[Middleware] Error getting session for ${pathname}:`, sessionError);
     // Treat session error as potentially inactive/unauthenticated
   } else if (session?.user) {
     console.log(`[Middleware] Session found for user ${session.user.id}. Checking profile status...`);
+    // Check if user is admin
+    isAdmin = session.user.email === 'management@superwave.ai' || session.user.user_metadata?.role === 'admin';
+
     // If session exists, check the user_profiles table for active status
     try {
       // Use supabaseAdmin to bypass RLS for this check
@@ -147,14 +151,26 @@ export async function middleware(request: NextRequest) {
   const requiresAuth = authenticatedPaths.some(path => pathname.startsWith(path)) || pathname === '/'; // Protect root path too
 
   // If trying to access a protected route WITHOUT a valid session OR an active profile, redirect to login
-  if (requiresAuth && !userIsActive) {
-    console.log(`[Middleware] Access denied (requiresAuth=${requiresAuth}, userIsActive=${userIsActive}). Redirecting from ${pathname} to /login`);
-    return NextResponse.redirect(new URL('/login', request.url));
-  }
+  // Check if user is authenticated for protected routes
+  if (pathname !== '/login' && pathname !== '/signup' && pathname !== '/forgot-password' && !pathname.startsWith('/reset-password')) {
+    if (!userIsActive) {
+      // Redirect to login for unauthenticated or inactive users
+      const redirectUrl = new URL('/login', request.url);
+      if (pathname !== '/') {
+        redirectUrl.searchParams.set('redirectTo', pathname);
+      }
+      return NextResponse.redirect(redirectUrl);
+    }
 
-  // If trying to access a public route (like login/signup) WITH an active session/profile, redirect to domains
-  if (isPublicPath && userIsActive) {
-    console.log(`[Middleware] Active session/profile & isPublicPath=true, redirecting from ${pathname} to /domains`);
+    // Check admin routes
+    if (pathname.startsWith('/admin')) {
+      if (!isAdmin) {
+        // Redirect non-admin users to domains page
+        return NextResponse.redirect(new URL('/domains', request.url));
+      }
+    }
+  } else if (userIsActive && (pathname === '/login' || pathname === '/signup')) {
+    // Redirect authenticated users away from auth pages
     return NextResponse.redirect(new URL('/domains', request.url));
   }
 

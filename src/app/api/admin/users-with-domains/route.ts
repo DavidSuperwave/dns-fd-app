@@ -3,6 +3,38 @@ import { supabaseAdmin } from '@/lib/supabase-client'; // Import only the admin 
 
 export const dynamic = 'force-dynamic'; // Ensure fresh data on each request
 
+type UserStatus = 'pending' | 'active' | 'inactive';
+
+async function verifyAdmin(request: NextRequest) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { error: 'Not authenticated: Missing or invalid Authorization header', status: 401 };
+  }
+  const token = authHeader.split(' ')[1];
+
+  if (!supabaseAdmin) {
+    console.error('[API UsersWithDomains] Supabase admin client is not initialized.');
+    return { error: 'Server configuration error', status: 500 };
+  }
+
+  const { data: { user: requestingUser }, error: authError } = await supabaseAdmin.auth.getUser(token);
+
+  if (authError || !requestingUser) {
+    console.warn('[API UsersWithDomains] Authentication failed via token.', authError);
+    const status = authError?.message.includes('invalid JWT') ? 401 : 500;
+    return { error: `Authentication failed: ${authError?.message || 'Unknown error'}`, status };
+  }
+
+  // Check if the requesting user is an admin
+  const isAdmin = requestingUser?.user_metadata?.role === 'admin' || requestingUser?.email === process.env.ADMIN_EMAIL;
+  if (!isAdmin) {
+    console.warn(`[API UsersWithDomains] Forbidden attempt by non-admin: ${requestingUser.email}`);
+    return { error: 'Forbidden: Requires admin privileges', status: 403 };
+  }
+
+  return { requestingUser };
+}
+
 export async function GET(request: NextRequest) {
   try {
     // 1. Verify requesting user is authenticated and is an admin via JWT
@@ -85,6 +117,49 @@ export async function GET(request: NextRequest) {
 
     // 3. Return the data
     return NextResponse.json(processedData, { status: 200 });
+
+  } catch (error) {
+    console.error('[API UsersWithDomains] General Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Internal Server Error';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const adminCheck = await verifyAdmin(request);
+    if ('error' in adminCheck) {
+      return NextResponse.json({ error: adminCheck.error }, { status: adminCheck.status });
+    }
+
+    const body = await request.json();
+    const { userId, status } = body;
+
+    if (!userId || !status) {
+      return NextResponse.json({ error: 'Missing required fields: userId and status' }, { status: 400 });
+    }
+
+    if (!['pending', 'active', 'inactive'].includes(status)) {
+      return NextResponse.json({ error: 'Invalid status value' }, { status: 400 });
+    }
+
+    if (!supabaseAdmin) {
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('user_profiles')
+      .update({ status })
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[API UsersWithDomains] Error updating user status:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json(data);
 
   } catch (error) {
     console.error('[API UsersWithDomains] General Error:', error);
