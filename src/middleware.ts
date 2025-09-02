@@ -162,13 +162,8 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(redirectUrl);
     }
 
-    // Check admin routes
-    if (pathname.startsWith('/admin')) {
-      if (!isAdmin) {
-        // Redirect non-admin users to domains page
-        return NextResponse.redirect(new URL('/domains', request.url));
-      }
-    }
+    // Admin routes have been consolidated into main application
+    // No separate admin path handling needed
   } else if (userIsActive && (pathname === '/login' || pathname === '/signup')) {
     // Redirect authenticated users away from auth pages
     return NextResponse.redirect(new URL('/domains', request.url));

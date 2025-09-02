@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import { Database } from "@/types/supabase";
 
 // This client should only be used in server contexts with admin privileges
 export function createAdminClient() {
@@ -10,7 +9,7 @@ export function createAdminClient() {
     throw new Error('Missing Supabase environment variables for admin client');
   }
   
-  return createClient<Database>(supabaseUrl, supabaseServiceRoleKey, {
+  return createClient(supabaseUrl, supabaseServiceRoleKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false
