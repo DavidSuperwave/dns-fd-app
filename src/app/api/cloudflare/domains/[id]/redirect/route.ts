@@ -16,6 +16,31 @@ interface PageRule {
     // ... other PageRule properties
 }
 const CLOUDFLARE_API_URL = 'https://api.cloudflare.com/client/v4';
+
+// Helper function to get Page Rules authentication headers (requires Global API Key)
+function getPageRulesAuthHeaders(): Record<string, string> {
+    const email = process.env.CLOUDFLARE_AUTH_EMAIL;
+    const globalKey = process.env.CLOUDFLARE_GLOBAL_API_KEY;
+    
+    if (email && globalKey) {
+        return {
+            'X-Auth-Email': email,
+            'X-Auth-Key': globalKey,
+            'Content-Type': 'application/json'
+        };
+    }
+    
+    // Fallback to API token (though Page Rules doesn't support it)
+    const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+    if (apiToken) {
+        return {
+            'Authorization': `Bearer ${apiToken}`,
+            'Content-Type': 'application/json'
+        };
+    }
+    
+    throw new Error('Cloudflare authentication not configured. Page Rules requires Global API Key (email + key) or API Token.');
+}
 export async function PATCH(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -115,16 +140,21 @@ export async function PATCH(
             return NextResponse.json({ error: 'Cloudflare ID missing for this domain.' }, { status: 400 });
         }
 
-        const cfToken = process.env.CLOUDFLARE_API_TOKEN;
-        if (!cfToken) {
-            console.error('[API Edit Redirect] CLOUDFLARE_API_TOKEN is not set.');
-            return NextResponse.json({ error: 'Server configuration error: Cloudflare token missing.' }, { status: 500 });
+        // Get Page Rules authentication headers (uses Global API Key)
+        let authHeaders: Record<string, string>;
+        try {
+            authHeaders = getPageRulesAuthHeaders();
+            const authMethod = process.env.CLOUDFLARE_AUTH_EMAIL && process.env.CLOUDFLARE_GLOBAL_API_KEY ? 'Global API Key' : 'API Token';
+            console.log(`[API Edit Redirect] Using ${authMethod} for Page Rules API`);
+        } catch (error) {
+            console.error('[API Edit Redirect] Cloudflare authentication not configured:', error);
+            return NextResponse.json({ error: 'Server configuration error: Cloudflare authentication missing.' }, { status: 500 });
         }
 
         // Manage Cloudflare Page Rules
         console.log(`[API Edit Redirect] Fetching page rules for zone ${cfZoneId} (${domainNameForLogging})`);
         const listRulesResponse = await fetch(`${CLOUDFLARE_API_URL}/zones/${cfZoneId}/pagerules?status=active&match=all&order=priority`, {
-            headers: { 'Authorization': `Bearer ${cfToken}`, 'Content-Type': 'application/json' }
+            headers: authHeaders
         });
 
         if (!listRulesResponse.ok) {
@@ -153,7 +183,7 @@ export async function PATCH(
                 console.log(`[API Edit Redirect] Updating existing page rule ${existingForwardingRule.id} for ${domainNameForLogging} to ${newRedirectUrl}`);
                 const updateResponse = await fetch(`${CLOUDFLARE_API_URL}/zones/${cfZoneId}/pagerules/${existingForwardingRule.id}`, {
                     method: 'PUT',
-                    headers: { 'Authorization': `Bearer ${cfToken}`, 'Content-Type': 'application/json' },
+                    headers: authHeaders,
                     body: JSON.stringify({ ...pageRulePayload, priority: existingForwardingRule.priority })
                 });
                 if (!updateResponse.ok) {
@@ -165,7 +195,7 @@ export async function PATCH(
                 console.log(`[API Edit Redirect] Creating new page rule for ${domainNameForLogging} to ${newRedirectUrl}`);
                 const createResponse = await fetch(`${CLOUDFLARE_API_URL}/zones/${cfZoneId}/pagerules`, {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${cfToken}`, 'Content-Type': 'application/json' },
+                    headers: authHeaders,
                     body: JSON.stringify(pageRulePayload)
                 });
                 if (!createResponse.ok) {
@@ -179,7 +209,7 @@ export async function PATCH(
                 console.log(`[API Edit Redirect] Deleting existing page rule ${existingForwardingRule.id} for ${domainNameForLogging}`);
                 const deleteResponse = await fetch(`${CLOUDFLARE_API_URL}/zones/${cfZoneId}/pagerules/${existingForwardingRule.id}`, {
                     method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${cfToken}` }
+                    headers: authHeaders
                 });
                 if (!deleteResponse.ok && deleteResponse.status !== 404) {
                     const errorData = await deleteResponse.json().catch(() => ({}));
