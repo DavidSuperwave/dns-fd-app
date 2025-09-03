@@ -39,8 +39,8 @@ export default function ResetPasswordConfirmPage() {
           
           if (event === 'PASSWORD_RECOVERY' || (session?.user && event === 'SIGNED_IN')) {
             setIsValidSession(true);
-            setUserEmail(session.user.email || null);
-            console.log("Password recovery session established for:", session.user.email);
+            setUserEmail(session?.user?.email || null);
+            console.log("Password recovery session established for:", session?.user?.email);
           } else if (event === 'SIGNED_OUT' || !session) {
             // Only redirect if we haven't established a valid session yet
             if (!isValidSession) {
