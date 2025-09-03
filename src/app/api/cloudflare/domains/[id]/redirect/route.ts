@@ -146,6 +146,14 @@ export async function PATCH(
             authHeaders = getPageRulesAuthHeaders();
             const authMethod = process.env.CLOUDFLARE_AUTH_EMAIL && process.env.CLOUDFLARE_GLOBAL_API_KEY ? 'Global API Key' : 'API Token';
             console.log(`[API Edit Redirect] Using ${authMethod} for Page Rules API`);
+            
+            // Debug authentication setup (without exposing sensitive data)
+            console.log(`[API Edit Redirect] Auth setup:`, {
+                hasEmail: !!process.env.CLOUDFLARE_AUTH_EMAIL,
+                hasGlobalKey: !!process.env.CLOUDFLARE_GLOBAL_API_KEY,
+                hasApiToken: !!process.env.CLOUDFLARE_API_TOKEN,
+                authHeadersKeys: Object.keys(authHeaders)
+            });
         } catch (error) {
             console.error('[API Edit Redirect] Cloudflare authentication not configured:', error);
             return NextResponse.json({ error: 'Server configuration error: Cloudflare authentication missing.' }, { status: 500 });
@@ -157,9 +165,15 @@ export async function PATCH(
             headers: authHeaders
         });
 
+        console.log(`[API Edit Redirect] Page Rules API response status: ${listRulesResponse.status}`);
+        
         if (!listRulesResponse.ok) {
             const errorData = await listRulesResponse.json().catch(() => ({}));
-            console.error(`[API Edit Redirect] Failed to list page rules for ${cfZoneId}:`, errorData);
+            console.error(`[API Edit Redirect] Failed to list page rules for ${cfZoneId}:`, {
+                status: listRulesResponse.status,
+                statusText: listRulesResponse.statusText,
+                errorData: errorData
+            });
             throw new Error(`Cloudflare API error listing page rules: ${errorData.errors?.[0]?.message || listRulesResponse.statusText}`);
         }
         const listRulesResult = await listRulesResponse.json();
