@@ -7,7 +7,7 @@ const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 const CLOUDFLARE_API_BASE_URL = 'https://api.cloudflare.com/client/v4';
 
 // Helper function to create authentication headers
-function getCloudflareAuthHeaders() {
+function getCloudflareAuthHeaders(): Record<string, string> {
   // Try global API key method first
   if (CLOUDFLARE_AUTH_EMAIL && CLOUDFLARE_GLOBAL_API_KEY) {
     return {
