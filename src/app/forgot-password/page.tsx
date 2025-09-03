@@ -32,8 +32,7 @@ export default function ForgotPasswordPage() {
     setIsLoading(true);
     try {
       // Use Supabase native password reset
-      const { createClient } = await import('@/lib/supabase-browser');
-      const supabase = createClient();
+      const { supabase } = await import('@/lib/supabase-browser');
       
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`
