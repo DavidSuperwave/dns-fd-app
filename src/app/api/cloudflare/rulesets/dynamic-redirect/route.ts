@@ -1,21 +1,32 @@
 import { NextResponse } from 'next/server';
 
-// Use the new environment variables for Global API Key authentication
+// Use environment variables for authentication - try both token and global key methods
 const CLOUDFLARE_AUTH_EMAIL = process.env.CLOUDFLARE_AUTH_EMAIL;
-const CLOUDFLARE_GLOBAL_API_KEY = process.env.CLOUDFLARE_GLOBAL_API_KEY; // Changed from CLOUDFLARE_API_TOKEN
+const CLOUDFLARE_GLOBAL_API_KEY = process.env.CLOUDFLARE_GLOBAL_API_KEY;
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 const CLOUDFLARE_API_BASE_URL = 'https://api.cloudflare.com/client/v4';
 
 // Helper function to create authentication headers
 function getCloudflareAuthHeaders() {
-  if (!CLOUDFLARE_AUTH_EMAIL || !CLOUDFLARE_GLOBAL_API_KEY) {
-    console.error('Cloudflare authentication credentials (email or global API key) are not configured.');
-    throw new Error('Cloudflare authentication credentials are not configured.');
+  // Try global API key method first
+  if (CLOUDFLARE_AUTH_EMAIL && CLOUDFLARE_GLOBAL_API_KEY) {
+    return {
+      'X-Auth-Email': CLOUDFLARE_AUTH_EMAIL,
+      'X-Auth-Key': CLOUDFLARE_GLOBAL_API_KEY,
+      'Content-Type': 'application/json',
+    };
   }
-  return {
-    'X-Auth-Email': CLOUDFLARE_AUTH_EMAIL,
-    'X-Auth-Key': CLOUDFLARE_GLOBAL_API_KEY,
-    'Content-Type': 'application/json',
-  };
+  
+  // Fallback to Bearer token method
+  if (CLOUDFLARE_API_TOKEN) {
+    return {
+      'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      'Content-Type': 'application/json',
+    };
+  }
+  
+  console.error('Cloudflare authentication credentials are not configured. Need either (email + global key) or API token.');
+  throw new Error('Cloudflare authentication credentials are not configured.');
 }
 
 export async function GET(request: Request) {

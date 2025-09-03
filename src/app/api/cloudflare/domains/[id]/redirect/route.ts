@@ -59,7 +59,7 @@ export async function PATCH(
 
         // --- Authorization Step 2: Check Permissions (Admin or Assigned User) ---
         let isAuthorizedToEdit = false;
-        const isAdmin = requestingUser?.user_metadata?.role === 'admin' || (process.env.ADMIN_EMAIL && requestingUser?.email === process.env.ADMIN_EMAIL);
+        const isAdmin = requestingUser?.email === 'admin@superwave.io' || requestingUser?.user_metadata?.role === 'admin';
 
         if (isAdmin) {
             console.log(`[API Edit Redirect] Admin user ${requestingUser.email} authorized for domain ${supabaseDomainId}.`);
