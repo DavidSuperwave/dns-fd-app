@@ -34,10 +34,20 @@ export async function GET(request: NextRequest) {
   );
 
   try {
+    console.log('[API Users] Processing request...');
+    
     // 1. Verify requesting user is authenticated and is an admin
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
+    console.log('[API Users] Session check:', { 
+      hasSession: !!session, 
+      hasUser: !!session?.user, 
+      userEmail: session?.user?.email,
+      sessionError 
+    });
+    
     if (sessionError || !session?.user) {
+      console.log('[API Users] Authentication failed:', sessionError);
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
@@ -47,7 +57,14 @@ export async function GET(request: NextRequest) {
     // Check if user is admin
     const isAdmin = session.user.email === 'admin@superwave.io' || session.user.user_metadata?.role === 'admin';
     
+    console.log('[API Users] Admin check:', { 
+      userEmail: session.user.email, 
+      isAdmin,
+      userMetadata: session.user.user_metadata 
+    });
+    
     if (!isAdmin) {
+      console.log('[API Users] Access denied - not admin');
       return NextResponse.json(
         { error: 'Forbidden: Requires admin privileges' },
         { status: 403 }
@@ -55,8 +72,10 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Use admin client to fetch all users and their domains
+    console.log('[API Users] Creating admin client...');
     const adminSupabase = createAdminClient();
     
+    console.log('[API Users] Fetching user profiles...');
     // Fetch all user profiles with their assigned domains
     const { data: users, error: usersError } = await adminSupabase
       .from('user_profiles')
@@ -72,10 +91,16 @@ export async function GET(request: NextRequest) {
       `)
       .order('created_at', { ascending: false });
 
+    console.log('[API Users] Users query result:', { 
+      userCount: users?.length, 
+      usersError,
+      sampleUser: users?.[0]
+    });
+
     if (usersError) {
       console.error('[API Users] Error fetching users:', usersError);
       return NextResponse.json(
-        { error: 'Failed to fetch users' },
+        { error: `Failed to fetch users: ${usersError.message}` },
         { status: 500 }
       );
     }
