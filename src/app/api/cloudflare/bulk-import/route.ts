@@ -16,11 +16,8 @@ interface CloudflareDomain {
   type?: string;
   created_on: string;
   modified_on: string;
-  name_servers?: string[];
-  original_name_servers?: string[];
-  original_registrar?: string;
-  original_dnshost?: string;
-  development_mode?: number;
+  // Note: Removed fields that don't exist in current domains table:
+  // name_servers, original_name_servers, original_registrar, original_dnshost, development_mode
 }
 
 interface ImportOptions {
@@ -242,7 +239,7 @@ async function processBulkImport(domains: CloudflareDomain[], options: ImportOpt
         continue;
       }
 
-      // Prepare domain data
+      // Prepare domain data (only include columns that exist in the table)
       const domainData = {
         cloudflare_id: domain.id,
         name: domain.name,
@@ -251,11 +248,9 @@ async function processBulkImport(domains: CloudflareDomain[], options: ImportOpt
         type: domain.type || 'full',
         created_on: domain.created_on,
         modified_on: domain.modified_on,
-        last_synced: timestamp,
-        name_servers: domain.name_servers || [],
-        original_name_servers: domain.original_name_servers || [],
-        original_registrar: domain.original_registrar,
-        development_mode: domain.development_mode
+        last_synced: timestamp
+        // Note: removed name_servers, original_name_servers, original_registrar, development_mode
+        // as these columns don't exist in the current domains table schema
       };
 
       // Fetch redirect URL if requested
