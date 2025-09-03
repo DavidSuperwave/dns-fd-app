@@ -32,25 +32,50 @@ export default function ResetPasswordConfirmPage() {
     const checkSession = async () => {
       try {
         const { supabase } = await import('@/lib/supabase-browser');
-        const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (error || !session?.user) {
-          toast.error("Invalid or expired reset link");
-          router.push("/login");
-          return;
+        // Listen for auth state changes to catch the session after token verification
+        const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+          console.log("Auth state change:", event, session);
+          
+          if (event === 'PASSWORD_RECOVERY' || (session?.user && event === 'SIGNED_IN')) {
+            setIsValidSession(true);
+            setUserEmail(session.user.email || null);
+            console.log("Password recovery session established for:", session.user.email);
+          } else if (event === 'SIGNED_OUT' || !session) {
+            // Only redirect if we haven't established a valid session yet
+            if (!isValidSession) {
+              console.log("No valid session found, redirecting to login");
+              setTimeout(() => {
+                toast.error("Invalid or expired reset link");
+                router.push("/login");
+              }, 3000); // Give more time for auth state to settle
+            }
+          }
+        });
+        
+        // Also check current session immediately
+        const { data: { session }, error } = await supabase.auth.getSession();
+        console.log("Current session:", session, error);
+        
+        if (session?.user) {
+          setIsValidSession(true);
+          setUserEmail(session.user.email || null);
         }
         
-        setIsValidSession(true);
-        setUserEmail(session.user.email || null);
+        return () => {
+          authListener.subscription.unsubscribe();
+        };
       } catch (error) {
         console.error("Session check error:", error);
-        toast.error("Invalid reset link");
-        router.push("/login");
+        setTimeout(() => {
+          toast.error("Invalid reset link");
+          router.push("/login");
+        }, 3000);
       }
     };
 
     checkSession();
-  }, [router]);
+  }, [router, isValidSession]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,7 +223,10 @@ export default function ResetPasswordConfirmPage() {
         ) : (
           <CardContent className="py-8">
             <div className="text-center text-gray-600">
-              Validating reset link...
+              <div className="mb-2">Validating reset link...</div>
+              <div className="text-sm text-gray-500">
+                This may take a few seconds while we verify your identity.
+              </div>
             </div>
           </CardContent>
         )}
