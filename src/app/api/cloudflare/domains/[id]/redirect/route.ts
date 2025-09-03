@@ -150,7 +150,9 @@ export async function PATCH(
             // Debug authentication setup (without exposing sensitive data)
             console.log(`[API Edit Redirect] Auth setup:`, {
                 hasEmail: !!process.env.CLOUDFLARE_AUTH_EMAIL,
+                emailValue: process.env.CLOUDFLARE_AUTH_EMAIL, // Show email to verify it's correct
                 hasGlobalKey: !!process.env.CLOUDFLARE_GLOBAL_API_KEY,
+                globalKeyLength: process.env.CLOUDFLARE_GLOBAL_API_KEY?.length, // Show length to verify key exists
                 hasApiToken: !!process.env.CLOUDFLARE_API_TOKEN,
                 authHeadersKeys: Object.keys(authHeaders)
             });

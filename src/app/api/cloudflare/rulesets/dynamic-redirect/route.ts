@@ -47,7 +47,9 @@ export async function GET(request: Request) {
     // Debug authentication setup (without exposing sensitive data)
     console.log(`[DynamicRedirect] Auth setup:`, {
       hasEmail: !!CLOUDFLARE_AUTH_EMAIL,
+      emailValue: CLOUDFLARE_AUTH_EMAIL, // Show email to verify it's correct
       hasGlobalKey: !!CLOUDFLARE_GLOBAL_API_KEY,
+      globalKeyLength: CLOUDFLARE_GLOBAL_API_KEY?.length, // Show length to verify key exists
       hasApiToken: !!CLOUDFLARE_API_TOKEN,
       authHeadersKeys: Object.keys(authHeaders)
     });
