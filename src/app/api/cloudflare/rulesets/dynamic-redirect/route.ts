@@ -8,15 +8,7 @@ const CLOUDFLARE_API_BASE_URL = 'https://api.cloudflare.com/client/v4';
 
 // Helper function to create authentication headers
 function getCloudflareAuthHeaders(): Record<string, string> {
-  // For Rulesets API, prefer API Token as it has better permission support
-  if (CLOUDFLARE_API_TOKEN) {
-    return {
-      'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
-      'Content-Type': 'application/json',
-    };
-  }
-  
-  // Fallback to Global API Key method
+  // For Rulesets API, prefer Global API Key as it has full account access
   if (CLOUDFLARE_AUTH_EMAIL && CLOUDFLARE_GLOBAL_API_KEY) {
     return {
       'X-Auth-Email': CLOUDFLARE_AUTH_EMAIL,
@@ -25,7 +17,15 @@ function getCloudflareAuthHeaders(): Record<string, string> {
     };
   }
   
-  console.error('Cloudflare authentication credentials are not configured. Need either API token or (email + global key).');
+  // Fallback to API Token method
+  if (CLOUDFLARE_API_TOKEN) {
+    return {
+      'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      'Content-Type': 'application/json',
+    };
+  }
+  
+  console.error('Cloudflare authentication credentials are not configured. Need either (email + global key) or API token.');
   throw new Error('Cloudflare authentication credentials are not configured.');
 }
 
@@ -41,8 +41,16 @@ export async function GET(request: Request) {
     const authHeaders = getCloudflareAuthHeaders(); // Use the helper
     
     // Log which auth method we're using (without exposing sensitive data)
-    const authMethod = CLOUDFLARE_API_TOKEN ? 'Bearer Token' : 'Global API Key';
+    const authMethod = CLOUDFLARE_AUTH_EMAIL && CLOUDFLARE_GLOBAL_API_KEY ? 'Global API Key' : 'Bearer Token';
     console.log(`[DynamicRedirect] Using ${authMethod} authentication for zone ${zoneId}`);
+    
+    // Debug authentication setup (without exposing sensitive data)
+    console.log(`[DynamicRedirect] Auth setup:`, {
+      hasEmail: !!CLOUDFLARE_AUTH_EMAIL,
+      hasGlobalKey: !!CLOUDFLARE_GLOBAL_API_KEY,
+      hasApiToken: !!CLOUDFLARE_API_TOKEN,
+      authHeadersKeys: Object.keys(authHeaders)
+    });
 
     const phase = 'http_request_dynamic_redirect';
     const cloudflareUrl = `${CLOUDFLARE_API_BASE_URL}/zones/${zoneId}/rulesets/phases/${phase}/entrypoint`;
