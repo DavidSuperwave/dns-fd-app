@@ -24,27 +24,38 @@ export default function ResetPasswordConfirmPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [isValidToken, setIsValidToken] = useState(false);
+  const [isValidSession, setIsValidSession] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
-  // Extract token and email from URL
-  const token = searchParams.get("token");
-  const email = searchParams.get("email");
-
   useEffect(() => {
-    if (!token || !email) {
-      toast.error("Invalid reset link");
-      router.push("/login");
-      return;
-    }
-    // Optionally, you can call your backend to validate the token/email here
-    setIsValidToken(true);
-  }, [token, email, router]);
+    const checkSession = async () => {
+      try {
+        const { supabase } = await import('@/lib/supabase-browser');
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error || !session?.user) {
+          toast.error("Invalid or expired reset link");
+          router.push("/login");
+          return;
+        }
+        
+        setIsValidSession(true);
+        setUserEmail(session.user.email || null);
+      } catch (error) {
+        console.error("Session check error:", error);
+        toast.error("Invalid reset link");
+        router.push("/login");
+      }
+    };
+
+    checkSession();
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!isValidToken) {
+    if (!isValidSession) {
       toast.error("Invalid or expired reset link");
       return;
     }
@@ -59,26 +70,33 @@ export default function ResetPasswordConfirmPage() {
       return;
     }
 
+    if (password.length < 6) {
+      toast.error("Password must be at least 6 characters long");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      // Call your backend API to reset the password
-      const response = await fetch("/api/auth/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, token, password }),
+      // Use Supabase's native password update
+      const { supabase } = await import('@/lib/supabase-browser');
+      const { error } = await supabase.auth.updateUser({ 
+        password: password 
       });
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || "Failed to reset password");
+      if (error) {
+        throw error;
       }
 
       toast.success("Password reset successful!");
+      
+      // Sign out the user after password reset
+      await supabase.auth.signOut();
+      
       await new Promise((resolve) => setTimeout(resolve, 1500));
       router.push("/login");
     } catch (error) {
+      console.error("Password reset error:", error);
       toast.error(error instanceof Error ? error.message : "Failed to reset password");
     } finally {
       setIsLoading(false);
@@ -117,58 +135,73 @@ export default function ResetPasswordConfirmPage() {
           </div>
           <CardTitle className="text-2xl text-center">Reset Your Password</CardTitle>
           <CardDescription className="text-center">
+            {userEmail && (
+              <span className="block mb-2 font-medium">
+                Resetting password for: {userEmail}
+              </span>
+            )}
             Enter your new password below.
           </CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-6 pt-4">
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label htmlFor="password">New Password</Label>
-                <Button
-                  type="button"
-                  variant="link"
-                  className="px-0 text-sm"
-                  onClick={handleGeneratePassword}
-                >
-                  Generate secure password
-                </Button>
+        {isValidSession ? (
+          <form onSubmit={handleSubmit}>
+            <CardContent className="space-y-6 pt-4">
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="password">New Password</Label>
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="px-0 text-sm"
+                    onClick={handleGeneratePassword}
+                  >
+                    Generate secure password
+                  </Button>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    ref={passwordRef}
+                    placeholder="Enter new password"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </Button>
+                </div>
               </div>
-              <div className="relative">
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirm New Password</Label>
                 <Input
-                  id="password"
+                  id="confirm-password"
                   type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  ref={passwordRef}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0 top-0 h-full px-3"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </Button>
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm New Password</Label>
-              <Input
-                id="confirm-password"
-                type={showPassword ? "text" : "password"}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-              />
+            </CardContent>
+            <CardFooter className="flex flex-col pt-6 pb-8">
+              <Button type="submit" className="w-full" disabled={isLoading || !isValidSession}>
+                {isLoading ? "Resetting..." : "Reset Password"}
+              </Button>
+            </CardFooter>
+          </form>
+        ) : (
+          <CardContent className="py-8">
+            <div className="text-center text-gray-600">
+              Validating reset link...
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col pt-6 pb-8">
-            <Button type="submit" className="w-full" disabled={isLoading || !isValidToken}>
-              {isLoading ? "Resetting..." : "Reset Password"}
-            </Button>
-          </CardFooter>
-        </form>
+        )}
       </Card>
     </div>
   );
