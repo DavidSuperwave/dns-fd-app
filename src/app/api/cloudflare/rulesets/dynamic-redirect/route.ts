@@ -31,8 +31,6 @@ function getCloudflareAuthHeaders() {
 
 export async function GET(request: Request) {
   try {
-    const authHeaders = getCloudflareAuthHeaders(); // Use the helper
-
     const { searchParams } = new URL(request.url);
     const zoneId = searchParams.get('zoneId');
 
@@ -40,12 +38,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: 'Zone ID is required.' }, { status: 400 });
     }
 
+    const authHeaders = getCloudflareAuthHeaders(); // Use the helper
+
     const phase = 'http_request_dynamic_redirect';
     const cloudflareUrl = `${CLOUDFLARE_API_BASE_URL}/zones/${zoneId}/rulesets/phases/${phase}/entrypoint`;
 
     const response = await fetch(cloudflareUrl, {
       method: 'GET',
-      headers: authHeaders, // Use the new auth headers
+      headers: authHeaders,
     });
 
     const data = await response.json();
@@ -69,8 +69,6 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const authHeaders = getCloudflareAuthHeaders(); // Use the helper
-
     const body = await request.json();
     const { zoneId, ruleset } = body;
 
@@ -80,6 +78,8 @@ export async function PUT(request: Request) {
     if (!ruleset || typeof ruleset !== 'object' || !ruleset.rules ) { // Removed !ruleset.version check as it might not be used in payload
       return NextResponse.json({ success: false, error: 'Valid ruleset object (including rules) is required.' }, { status: 400 });
     }
+
+    const authHeaders = getCloudflareAuthHeaders(); // Use the helper
 
     const phase = 'http_request_dynamic_redirect';
     const cloudflareUrl = `${CLOUDFLARE_API_BASE_URL}/zones/${zoneId}/rulesets/phases/${phase}/entrypoint`;
@@ -91,7 +91,7 @@ export async function PUT(request: Request) {
 
     const response = await fetch(cloudflareUrl, {
       method: 'PUT',
-      headers: authHeaders, // Use the new auth headers
+      headers: authHeaders,
       body: JSON.stringify(payloadForCloudflare),
     });
 
