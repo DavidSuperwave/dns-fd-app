@@ -8,7 +8,15 @@ const CLOUDFLARE_API_BASE_URL = 'https://api.cloudflare.com/client/v4';
 
 // Helper function to create authentication headers
 function getCloudflareAuthHeaders(): Record<string, string> {
-  // Try global API key method first
+  // For Rulesets API, prefer API Token as it has better permission support
+  if (CLOUDFLARE_API_TOKEN) {
+    return {
+      'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      'Content-Type': 'application/json',
+    };
+  }
+  
+  // Fallback to Global API Key method
   if (CLOUDFLARE_AUTH_EMAIL && CLOUDFLARE_GLOBAL_API_KEY) {
     return {
       'X-Auth-Email': CLOUDFLARE_AUTH_EMAIL,
@@ -17,15 +25,7 @@ function getCloudflareAuthHeaders(): Record<string, string> {
     };
   }
   
-  // Fallback to Bearer token method
-  if (CLOUDFLARE_API_TOKEN) {
-    return {
-      'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
-      'Content-Type': 'application/json',
-    };
-  }
-  
-  console.error('Cloudflare authentication credentials are not configured. Need either (email + global key) or API token.');
+  console.error('Cloudflare authentication credentials are not configured. Need either API token or (email + global key).');
   throw new Error('Cloudflare authentication credentials are not configured.');
 }
 
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
     const authHeaders = getCloudflareAuthHeaders(); // Use the helper
     
     // Log which auth method we're using (without exposing sensitive data)
-    const authMethod = CLOUDFLARE_AUTH_EMAIL && CLOUDFLARE_GLOBAL_API_KEY ? 'Global API Key' : 'Bearer Token';
+    const authMethod = CLOUDFLARE_API_TOKEN ? 'Bearer Token' : 'Global API Key';
     console.log(`[DynamicRedirect] Using ${authMethod} authentication for zone ${zoneId}`);
 
     const phase = 'http_request_dynamic_redirect';
