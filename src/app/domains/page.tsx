@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { CSVUpload } from "@/components/domains/csv-upload";
+import { BulkImportDialog } from "@/components/domains/bulk-import-dialog";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
 import { PlusCircle, ExternalLink, Loader2, AlertTriangle, Edit3, Link as LinkIcon, UploadCloud, Rocket, Download } from "lucide-react";
@@ -1698,6 +1699,9 @@ export default function DomainsPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <h1 className="text-3xl font-bold tracking-tight">Domains</h1>
           <div className="flex flex-col sm:flex-row gap-2">
+            {isAdmin && (
+              <BulkImportDialog onImportComplete={() => loadDomains({ useMockData: false })} />
+            )}
 
             <Dialog open={isDialogOpen} onOpenChange={handleOpenChange}>
               <DialogTrigger asChild>
