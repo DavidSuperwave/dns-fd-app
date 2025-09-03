@@ -39,9 +39,15 @@ export async function GET(request: Request) {
     }
 
     const authHeaders = getCloudflareAuthHeaders(); // Use the helper
+    
+    // Log which auth method we're using (without exposing sensitive data)
+    const authMethod = CLOUDFLARE_AUTH_EMAIL && CLOUDFLARE_GLOBAL_API_KEY ? 'Global API Key' : 'Bearer Token';
+    console.log(`[DynamicRedirect] Using ${authMethod} authentication for zone ${zoneId}`);
 
     const phase = 'http_request_dynamic_redirect';
     const cloudflareUrl = `${CLOUDFLARE_API_BASE_URL}/zones/${zoneId}/rulesets/phases/${phase}/entrypoint`;
+    
+    console.log(`[DynamicRedirect] Making request to: ${cloudflareUrl}`);
 
     const response = await fetch(cloudflareUrl, {
       method: 'GET',
@@ -49,6 +55,9 @@ export async function GET(request: Request) {
     });
 
     const data = await response.json();
+    
+    console.log(`[DynamicRedirect] Cloudflare response status: ${response.status}`);
+    console.log(`[DynamicRedirect] Cloudflare response data:`, JSON.stringify(data, null, 2));
 
     if (!response.ok) {
       console.error('Cloudflare API Error (GET Ruleset):', data);
