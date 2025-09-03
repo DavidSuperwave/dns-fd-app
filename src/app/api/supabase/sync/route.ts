@@ -46,9 +46,9 @@ export async function POST() { // Remove unused 'request' parameter
     const email = sessionData.session.user.email;
     
     // Check if this is the admin email
-    if (email !== 'management@superwave.ai') {
+    if (email !== 'admin@superwave.io') {
       return NextResponse.json(
-        { success: false, error: 'Only the management@superwave.ai account can perform this action' },
+        { success: false, error: 'Only the admin@superwave.io account can perform this action' },
         { status: 403 }
       );
     }

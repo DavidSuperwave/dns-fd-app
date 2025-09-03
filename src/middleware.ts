@@ -84,7 +84,7 @@ export async function middleware(request: NextRequest) {
   } else if (session?.user) {
     console.log(`[Middleware] Session found for user ${session.user.id}. Checking profile status...`);
     // Check if user is admin
-    isAdmin = session.user.email === 'management@superwave.ai' || session.user.user_metadata?.role === 'admin';
+    isAdmin = session.user.email === 'admin@superwave.io' || session.user.user_metadata?.role === 'admin';
 
     // If session exists, check the user_profiles table for active status
     try {

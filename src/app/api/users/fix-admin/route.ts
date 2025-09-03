@@ -26,9 +26,9 @@ export async function POST(request: Request) {
     const { email } = await request.json();
 
     // Ensure it's the admin email
-    if (email !== 'management@superwave.ai') {
+    if (email !== 'admin@superwave.io') {
       return NextResponse.json(
-        { success: false, error: 'Only the management@superwave.ai account can be fixed by this endpoint' },
+        { success: false, error: 'Only the admin@superwave.io account can be fixed by this endpoint' },
         { status: 403 }
       );
     }

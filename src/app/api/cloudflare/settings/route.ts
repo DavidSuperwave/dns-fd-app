@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     const { data: userData } = await supabase.auth.getUser();
     
     // Check admin status - consider both role and email
-    const isAdminEmail = userData.user?.email === 'management@superwave.ai';
+    const isAdminEmail = userData.user?.email === 'admin@superwave.io';
     const hasAdminRole = userData.user?.user_metadata?.role === 'admin';
     const isAdmin = isAdminEmail || hasAdminRole;
     
@@ -184,7 +184,7 @@ export async function GET() {
     const { data: userData } = await supabase.auth.getUser();
     
     // Check admin status - consider both role and email
-    const isAdminEmail = userData.user?.email === 'management@superwave.ai';
+    const isAdminEmail = userData.user?.email === 'admin@superwave.io';
     const hasAdminRole = userData.user?.user_metadata?.role === 'admin';
     const isAdmin = isAdminEmail || hasAdminRole;
     

@@ -32,7 +32,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
     if (!user) return false;
     
     // Check if this is the admin email
-    const isAdminEmail = user.email === 'management@superwave.ai';
+    const isAdminEmail = user.email === 'admin@superwave.io';
     
     // Check if role is admin in user metadata
     const hasAdminRole = user.user_metadata?.role === 'admin';

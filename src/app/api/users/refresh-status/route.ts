@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     // User is authenticated, now check if admin
-    const isAdmin = requestingUser?.email === 'management@superwave.ai' || requestingUser?.user_metadata?.role === 'admin';
+    const isAdmin = requestingUser?.email === 'admin@superwave.io' || requestingUser?.user_metadata?.role === 'admin';
 
     if (!isAdmin) {
       console.warn(`[API Refresh Status] Non-admin user attempt: ${requestingUser?.email}`);

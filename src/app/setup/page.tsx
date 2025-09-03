@@ -22,7 +22,7 @@ export default function SetupPage() {
     try {
       // Create admin user
       const { error } = await supabase.auth.signUp({ // Removed unused data variable
-        email: "management@superwave.ai",
+        email: "admin@superwave.io",
         password: "hmn7pkq.XBH9yrq_vbk",
       });
       
@@ -66,7 +66,7 @@ export default function SetupPage() {
               <p className="font-medium">Setup complete!</p>
               <p className="text-sm mt-1">Admin account has been created successfully.</p>
               <ul className="mt-2 text-sm">
-                <li><strong>Email:</strong> management@superwave.ai</li>
+                <li><strong>Email:</strong> admin@superwave.io</li>
                 <li><strong>Password:</strong> hmn7pkq.XBH9yrq_vbk</li>
               </ul>
             </div>
@@ -77,7 +77,7 @@ export default function SetupPage() {
                 This will create an administrator account with the following credentials:
               </p>
               <ul className="mt-2 text-sm">
-                <li><strong>Email:</strong> management@superwave.ai</li>
+                <li><strong>Email:</strong> admin@superwave.io</li>
                 <li><strong>Password:</strong> hmn7pkq.XBH9yrq_vbk</li>
               </ul>
             </div>
