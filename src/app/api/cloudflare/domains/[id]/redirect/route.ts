@@ -17,6 +17,46 @@ interface PageRule {
 }
 const CLOUDFLARE_API_URL = 'https://api.cloudflare.com/client/v4';
 
+// Helper function to create DNS A records for the domain
+async function createDnsARecords(zoneId: string, domainName: string, authHeaders: Record<string, string>) {
+    const dnsRecords = [
+        {
+            type: 'A',
+            name: domainName,
+            content: '192.0.2.1',
+            proxied: true,
+            ttl: 1
+        },
+        {
+            type: 'A', 
+            name: `www.${domainName}`,
+            content: '192.0.2.2',
+            proxied: true,
+            ttl: 1
+        }
+    ];
+
+    for (const record of dnsRecords) {
+        try {
+            console.log(`[API Edit Redirect] Creating DNS A record: ${record.name} → ${record.content}`);
+            const response = await fetch(`${CLOUDFLARE_API_URL}/zones/${zoneId}/dns_records`, {
+                method: 'POST',
+                headers: authHeaders,
+                body: JSON.stringify(record)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.warn(`[API Edit Redirect] Failed to create DNS record for ${record.name}:`, errorData.errors?.[0]?.message || response.statusText);
+            } else {
+                console.log(`[API Edit Redirect] Successfully created DNS A record: ${record.name}`);
+            }
+        } catch (error) {
+            console.error(`[API Edit Redirect] Error creating DNS record for ${record.name}:`, error);
+        }
+    }
+}
+
 // Helper function to get Page Rules authentication headers (requires Global API Key)
 function getPageRulesAuthHeaders(): Record<string, string> {
     const email = process.env.CLOUDFLARE_AUTH_EMAIL;
@@ -188,54 +228,95 @@ export async function PATCH(
 
         if (newRedirectUrl && typeof newRedirectUrl === 'string' && newRedirectUrl.trim() !== "") {
             const redirectPayloadAction = { id: 'forwarding_url', value: { url: newRedirectUrl.trim(), status_code: 301 } };
-            const pageRulePayload = {
-                targets: [{ target: 'url', constraint: { operator: 'matches', value: `*${domainData.name}/*` } }],
-                actions: [redirectPayloadAction],
-                priority: 1,
-                status: 'active'
-            };
+            
+            // Create 3 Page Rules to handle all URL variations
+            const pageRulePatterns = [
+                `http://${domainData.name}/*`,    // HTTP version
+                `https://${domainData.name}/*`,   // HTTPS version
+                `*${domainData.name}/*`           // Naked domain (catch-all)
+            ];
 
-            if (existingForwardingRule) {
-                console.log(`[API Edit Redirect] Updating existing page rule ${existingForwardingRule.id} for ${domainNameForLogging} to ${newRedirectUrl}`);
-                const updateResponse = await fetch(`${CLOUDFLARE_API_URL}/zones/${cfZoneId}/pagerules/${existingForwardingRule.id}`, {
-                    method: 'PUT',
-                    headers: authHeaders,
-                    body: JSON.stringify({ ...pageRulePayload, priority: existingForwardingRule.priority })
-                });
-                if (!updateResponse.ok) {
-                    const errorData = await updateResponse.json().catch(() => ({}));
-                    throw new Error(`Cloudflare API error updating page rule: ${errorData.errors?.[0]?.message || updateResponse.statusText}`);
+            let createdRulesCount = 0;
+            let updatedRulesCount = 0;
+
+            // Check for existing forwarding rules that might conflict
+            const existingForwardingRules = existingRules.filter(rule =>
+                rule.actions.some(action => action.id === 'forwarding_url') && rule.status === 'active'
+            );
+
+            // If we have existing rules, delete them first to avoid conflicts
+            if (existingForwardingRules.length > 0) {
+                console.log(`[API Edit Redirect] Found ${existingForwardingRules.length} existing forwarding rules. Deleting them first...`);
+                for (const rule of existingForwardingRules) {
+                    const deleteResponse = await fetch(`${CLOUDFLARE_API_URL}/zones/${cfZoneId}/pagerules/${rule.id}`, {
+                        method: 'DELETE',
+                        headers: authHeaders
+                    });
+                    if (!deleteResponse.ok && deleteResponse.status !== 404) {
+                        console.warn(`[API Edit Redirect] Failed to delete existing rule ${rule.id}:`, deleteResponse.statusText);
+                    }
                 }
-                cloudflareActionTaken = "updated";
-            } else {
-                console.log(`[API Edit Redirect] Creating new page rule for ${domainNameForLogging} to ${newRedirectUrl}`);
+            }
+
+            // Create the 3 new Page Rules
+            for (let i = 0; i < pageRulePatterns.length; i++) {
+                const pattern = pageRulePatterns[i];
+                const pageRulePayload = {
+                    targets: [{ target: 'url', constraint: { operator: 'matches', value: pattern } }],
+                    actions: [redirectPayloadAction],
+                    priority: i + 1, // Priority 1, 2, 3
+                    status: 'active'
+                };
+
+                console.log(`[API Edit Redirect] Creating page rule ${i + 1}/3 for ${domainNameForLogging}: ${pattern} → ${newRedirectUrl}`);
                 const createResponse = await fetch(`${CLOUDFLARE_API_URL}/zones/${cfZoneId}/pagerules`, {
                     method: 'POST',
                     headers: authHeaders,
                     body: JSON.stringify(pageRulePayload)
                 });
+
                 if (!createResponse.ok) {
                     const errorData = await createResponse.json().catch(() => ({}));
-                    throw new Error(`Cloudflare API error creating page rule: ${errorData.errors?.[0]?.message || createResponse.statusText}`);
+                    console.error(`[API Edit Redirect] Failed to create page rule ${i + 1}: ${errorData.errors?.[0]?.message || createResponse.statusText}`);
+                    // Continue with other rules even if one fails
+                } else {
+                    createdRulesCount++;
+                    console.log(`[API Edit Redirect] Successfully created page rule ${i + 1}/3`);
                 }
-                cloudflareActionTaken = "created";
             }
+
+            cloudflareActionTaken = `created ${createdRulesCount}/3 page rules`;
+            
+            // Also create DNS A records for the domain
+            console.log(`[API Edit Redirect] Creating DNS A records for ${domainNameForLogging}...`);
+            await createDnsARecords(cfZoneId, domainData.name, authHeaders);
+            
         } else { // Remove redirect
-            if (existingForwardingRule) {
-                console.log(`[API Edit Redirect] Deleting existing page rule ${existingForwardingRule.id} for ${domainNameForLogging}`);
-                const deleteResponse = await fetch(`${CLOUDFLARE_API_URL}/zones/${cfZoneId}/pagerules/${existingForwardingRule.id}`, {
-                    method: 'DELETE',
-                    headers: authHeaders
-                });
-                if (!deleteResponse.ok && deleteResponse.status !== 404) {
-                    const errorData = await deleteResponse.json().catch(() => ({}));
-                    throw new Error(`Cloudflare API error deleting page rule: ${errorData.errors?.[0]?.message || deleteResponse.statusText}`);
-                } else if (deleteResponse.status === 404) {
-                    console.log(`[API Edit Redirect] Page rule ${existingForwardingRule.id} already deleted from Cloudflare.`);
+            // Find all existing forwarding rules and delete them
+            const existingForwardingRules = existingRules.filter(rule =>
+                rule.actions.some(action => action.id === 'forwarding_url') && rule.status === 'active'
+            );
+
+            if (existingForwardingRules.length > 0) {
+                console.log(`[API Edit Redirect] Deleting ${existingForwardingRules.length} existing forwarding rules for ${domainNameForLogging}`);
+                let deletedCount = 0;
+                
+                for (const rule of existingForwardingRules) {
+                    const deleteResponse = await fetch(`${CLOUDFLARE_API_URL}/zones/${cfZoneId}/pagerules/${rule.id}`, {
+                        method: 'DELETE',
+                        headers: authHeaders
+                    });
+                    if (!deleteResponse.ok && deleteResponse.status !== 404) {
+                        const errorData = await deleteResponse.json().catch(() => ({}));
+                        console.warn(`[API Edit Redirect] Failed to delete page rule ${rule.id}:`, errorData.errors?.[0]?.message || deleteResponse.statusText);
+                    } else {
+                        deletedCount++;
+                        console.log(`[API Edit Redirect] Successfully deleted page rule ${rule.id}`);
+                    }
                 }
-                cloudflareActionTaken = "deleted";
+                cloudflareActionTaken = `deleted ${deletedCount}/${existingForwardingRules.length} page rules`;
             } else {
-                cloudflareActionTaken = "none (no rule to delete)";
+                cloudflareActionTaken = "none (no rules to delete)";
             }
         }
 
