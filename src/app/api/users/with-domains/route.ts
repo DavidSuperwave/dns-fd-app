@@ -86,8 +86,7 @@ export async function GET(request: NextRequest) {
         role,
         active,
         status,
-        created_at,
-        confirmed_at
+        created_at
       `)
       .order('created_at', { ascending: false });
 
