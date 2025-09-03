@@ -72,6 +72,17 @@ export async function GET(request: Request) {
     if (!response.ok) {
       console.error('Cloudflare API Error (GET Ruleset):', data);
       const errorMessage = data?.errors?.[0]?.message || `Cloudflare API error: ${response.status}`;
+      
+      // Handle the specific case where no entrypoint ruleset exists - this is normal for zones without dynamic redirects
+      if (errorMessage.includes('could not find entrypoint ruleset')) {
+        console.log(`[DynamicRedirect] No existing dynamic redirect ruleset found for zone ${zoneId} - this is normal`);
+        return NextResponse.json({ 
+          success: true, 
+          ruleset: null, 
+          message: 'No dynamic redirect ruleset found - zone has no dynamic redirects configured' 
+        });
+      }
+      
       return NextResponse.json({ success: false, error: errorMessage, details: data.errors }, { status: response.status });
     }
 
