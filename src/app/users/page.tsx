@@ -74,7 +74,7 @@ function UsersPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/admin/users-with-domains', {
+      const response = await fetch('/api/users/with-domains', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

@@ -1,0 +1,117 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { cookies } from 'next/headers';
+import { createAdminClient } from '@/lib/supabase-admin';
+
+export async function GET(request: NextRequest) {
+  const resolvedCookieStore = await cookies();
+
+  // Create Supabase client for auth check
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return resolvedCookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          try {
+            resolvedCookieStore.set({ name, value, ...options });
+          } catch (error) {
+            console.warn(`[API Users] Failed to set cookie '${name}' via Route Handler.`, error);
+          }
+        },
+        remove(name: string, options: CookieOptions) {
+          try {
+            resolvedCookieStore.set({ name, value: '', ...options });
+          } catch (error) {
+            console.warn(`[API Users] Failed to remove cookie '${name}' via Route Handler.`, error);
+          }
+        },
+      },
+    }
+  );
+
+  try {
+    // 1. Verify requesting user is authenticated and is an admin
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session?.user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    // Check if user is admin
+    const isAdmin = session.user.email === 'admin@superwave.io' || session.user.user_metadata?.role === 'admin';
+    
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Forbidden: Requires admin privileges' },
+        { status: 403 }
+      );
+    }
+
+    // 2. Use admin client to fetch all users and their domains
+    const adminSupabase = createAdminClient();
+    
+    // Fetch all user profiles with their assigned domains
+    const { data: users, error: usersError } = await adminSupabase
+      .from('user_profiles')
+      .select(`
+        id,
+        email,
+        name,
+        role,
+        active,
+        status,
+        created_at,
+        confirmed_at
+      `)
+      .order('created_at', { ascending: false });
+
+    if (usersError) {
+      console.error('[API Users] Error fetching users:', usersError);
+      return NextResponse.json(
+        { error: 'Failed to fetch users' },
+        { status: 500 }
+      );
+    }
+
+    // Fetch domain assignments for all users
+    const { data: domainAssignments, error: domainsError } = await adminSupabase
+      .from('domain_assignments')
+      .select('user_id, domain_name');
+
+    if (domainsError) {
+      console.error('[API Users] Error fetching domain assignments:', domainsError);
+      // Continue without domain data rather than failing
+    }
+
+    // Group domains by user_id
+    const domainsByUser = (domainAssignments || []).reduce((acc: Record<string, string[]>, assignment) => {
+      if (!acc[assignment.user_id]) {
+        acc[assignment.user_id] = [];
+      }
+      acc[assignment.user_id].push(assignment.domain_name);
+      return acc;
+    }, {});
+
+    // Combine users with their domains
+    const usersWithDomains = users.map(user => ({
+      ...user,
+      domains: domainsByUser[user.id] || []
+    }));
+
+    return NextResponse.json(usersWithDomains);
+
+  } catch (error) {
+    console.error('[API Users] Unexpected error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
