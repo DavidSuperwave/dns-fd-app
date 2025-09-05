@@ -41,7 +41,7 @@ export function DashboardStats() {
       setLoading(true);
       
       // Fetch domain count
-      const domainsResponse = await fetch('/api/cloudflare/list-domains');
+      const domainsResponse = await fetch('/api/cloudflare/domains');
       const domainsData = await domainsResponse.json();
       
       // Fetch billing info for slots
@@ -49,7 +49,7 @@ export function DashboardStats() {
       const billingData = await billingResponse.json();
 
       if (domainsResponse.ok && billingResponse.ok) {
-        const totalDomains = domainsData.result?.length || 0;
+        const totalDomains = domainsData.domains?.length || 0;
         const sendCapacity = totalDomains * 500; // 500 sends per domain
         
         setStats({
@@ -62,7 +62,9 @@ export function DashboardStats() {
           status: billingData.status || 'active'
         });
       } else {
-        throw new Error('Failed to fetch stats');
+        const domainError = !domainsResponse.ok ? `Domains API: ${domainsData.error || domainsResponse.statusText}` : '';
+        const billingError = !billingResponse.ok ? `Billing API: ${billingData.error || billingResponse.statusText}` : '';
+        throw new Error(`Failed to fetch stats. ${domainError} ${billingError}`.trim());
       }
     } catch (err) {
       console.error('Error fetching dashboard stats:', err);
@@ -74,7 +76,6 @@ export function DashboardStats() {
 
   const handlePurchaseComplete = () => {
     fetchStats(); // Refresh stats after purchase
-    setShowPurchaseDialog(false);
     toast.success("Domain slot purchased successfully!");
   };
 
@@ -189,11 +190,11 @@ export function DashboardStats() {
             <Button 
               className="w-full mt-3" 
               size="sm"
-              onClick={() => setShowPurchaseDialog(true)}
+              onClick={() => setShowPurchaseDialog(!showPurchaseDialog)}
               disabled={loading}
             >
               <TrendingUp className="h-4 w-4 mr-2" />
-              Purchase Slot
+              {showPurchaseDialog ? 'Hide' : 'Purchase Slot'}
             </Button>
           </CardContent>
         </Card>
@@ -218,17 +219,17 @@ export function DashboardStats() {
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={() => setShowPurchaseDialog(true)}
+                onClick={() => setShowPurchaseDialog(!showPurchaseDialog)}
                 className="ml-4"
               >
-                Upgrade
+                {showPurchaseDialog ? 'Hide' : 'Upgrade'}
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Purchase Dialog */}
+      {/* Purchase Component */}
       {showPurchaseDialog && (
         <PurchaseDomainSlot
           currentSlots={stats.totalSlots}
