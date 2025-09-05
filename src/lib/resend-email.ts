@@ -6,11 +6,13 @@ const resendApiKey = process.env.RESEND_API_KEY;
 // For testing, you can use "onboarding@resend.dev", but emails will show "via resend.dev"
 const defaultSenderAddress = process.env.DEFAULT_SENDER_EMAIL || "onboarding@resend.dev"; // Example: "hey@c.superwave.ai" IF VERIFIED
 
-if (!resendApiKey) {
-  console.warn('[Resend Email] RESEND_API_KEY is not set. Email sending will likely fail or be severely restricted.');
+// Initialize Resend client only when API key is available
+let resend: Resend | null = null;
+if (resendApiKey) {
+  resend = new Resend(resendApiKey);
+} else {
+  console.warn('[Resend Email] RESEND_API_KEY is not set. Email sending will be disabled.');
 }
-
-const resend = new Resend(resendApiKey);
 
 /**
  * Sends an email using Resend
@@ -28,7 +30,7 @@ export async function sendEmail(
   htmlContent?: string,
   fromAddress?: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  if (!resendApiKey) {
+  if (!resend || !resendApiKey) {
     const errorMessage = 'Resend API key is not configured. Cannot send email.';
     console.error('[Resend Email]', errorMessage);
     return { success: false, error: errorMessage };

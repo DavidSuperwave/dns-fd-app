@@ -37,6 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/auth/auth-provider';
+import { SetupInvitationsButton } from '@/components/admin/setup-invitations-button';
 import {
   UserProfile,
   // Removed deleteUser, toggleUserStatus imports as they are now handled via API
@@ -353,6 +354,7 @@ function UsersPage() {
         <div className="flex space-x-2">
           {isAdmin && (
             <>
+              <SetupInvitationsButton />
               {/* Removed manual sync button since we now have real-time updates */}
             </>
           )}

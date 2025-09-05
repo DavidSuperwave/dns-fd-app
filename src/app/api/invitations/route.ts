@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-  import { supabaseAdmin } from '../../../lib/supabase-client'; // Keep upstream version
-  import { sendInvitationEmail } from '../../../lib/resend-email'; 
+import { createAdminClient } from '../../../lib/supabase-admin';
+import { sendInvitationEmail } from '../../../lib/resend-email'; 
 
   // Azure Communication Services email client configuration
 // const connectionString = "endpoint=https://sw-01.unitedstates.communication.azure.com/;accesskey=AEukP4bAKqA7qviO1tDeVxTMhzkTpw5ciJl9IhZbFeVOE7OjV9UGJQQJ99AFACULyCpb8TiCAAAAAZCSHrmv"; // Store securely, not hardcoded
@@ -13,9 +13,12 @@ type InvitationData = {
 
 export async function POST(request: Request) {
   try {
-    // Check if Supabase Admin client is available (implies service key is set server-side)
-    if (!supabaseAdmin) {
-      console.error('[Invitation API] Supabase Admin client is not initialized. Check SUPABASE_SERVICE_ROLE_KEY.');
+    // Create Supabase admin client
+    let supabaseAdmin;
+    try {
+      supabaseAdmin = createAdminClient();
+    } catch (error) {
+      console.error('[Invitation API] Failed to create Supabase Admin client:', error);
       return NextResponse.json(
         { success: false, error: 'Server configuration error' },
         { status: 500 }
@@ -49,13 +52,6 @@ export async function POST(request: Request) {
 
     try {
       // Check if user already exists
-      if (!supabaseAdmin) {
-        console.error('[Invitation API] Supabase client is not initialized');
-        return NextResponse.json(
-          { success: false, error: 'Internal server error' },
-          { status: 500 }
-        );
-      }
       const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers();
       if ((existingUser.users as { email: string }[]).some(u => u.email === email)) {
         return NextResponse.json(
@@ -72,7 +68,9 @@ export async function POST(request: Request) {
           email,
           role,
           token,
-          created_by: 'system'
+          created_by: 'system',
+          status: 'pending',
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days from now
         });
 
       if (dbError) {
@@ -127,6 +125,13 @@ export async function POST(request: Request) {
       if (!emailSuccess) {
         console.error('[Invitation API] Failed to send email:', emailError);
         // Don't throw error, just log it since the invitation was created
+        // But we should still inform the client that email failed
+        return NextResponse.json({
+          success: true,
+          message: 'Invitation created but email failed to send',
+          token: token,
+          emailError: emailError
+        });
       }
 
       return NextResponse.json({
