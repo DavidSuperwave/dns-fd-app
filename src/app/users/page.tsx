@@ -39,6 +39,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/auth/auth-provider';
 import { UserInfoDialog } from '@/components/admin/user-info-dialog';
+import { WhopPlanManagement } from '@/components/admin/whop-plan-management';
 import {
   UserProfile,
   // Removed deleteUser, toggleUserStatus imports as they are now handled via API
@@ -537,6 +538,11 @@ function UsersPage() {
       </div>
       </div>
 
+
+      {/* Whop Plan Management Section */}
+      <div className="mt-8 border-t pt-8">
+        <WhopPlanManagement />
+      </div>
 
       {/* User Info Dialog */}
       {selectedUser && (

@@ -573,46 +573,34 @@ export function UserInfoDialog({ user, isOpen, onClose, onUserUpdate, onUserDele
                   </CardContent>
                 </Card>
 
-                {/* Custom Pricing */}
+                {/* Whop Plan Assignment */}
                 <Card>
                   <CardHeader>
-                    <CardTitle>Custom Pricing</CardTitle>
+                    <CardTitle>Assign Whop Plan</CardTitle>
                     <CardDescription>
-                      Set custom pricing for this specific user
+                      Assign a Whop billing plan to this user
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label>Monthly Base Price ($)</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="25.00"
-                          value={customBasePrice}
-                          onChange={(e) => setCustomBasePrice(e.target.value)}
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label>Price per Additional Slot ($)</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="2.00"
-                          value={customSlotPrice}
-                          onChange={(e) => setCustomSlotPrice(e.target.value)}
-                        />
-                      </div>
-                    </div>
+                    <Alert>
+                      <CheckCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        Plans are managed through Whop. Use the Admin Billing section to sync and assign plans.
+                      </AlertDescription>
+                    </Alert>
 
-                    <Button 
-                      onClick={handleUpdateCustomPricing}
-                      variant="outline"
-                      className="w-full"
-                    >
-                      Update Custom Pricing
-                    </Button>
+                    <div className="text-center py-4">
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Current approach: Assign Whop plans through the main billing management interface
+                      </p>
+                      <Button 
+                        variant="outline"
+                        onClick={() => {/* TODO: Navigate to billing management */}}
+                        className="text-sm"
+                      >
+                        Go to Billing Management
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
