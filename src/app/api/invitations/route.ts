@@ -85,7 +85,7 @@ export async function POST(request: Request) {
       console.log('[Invitation API] Created invitation in database');
 
       // Create the invitation link
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.superwave.io';
       const invitationLink = `${baseUrl}/signup?token=${token}&email=${encodeURIComponent(email)}`;
       
       // Construct the email HTML content
