@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Button } from '@/components/ui/button';
 import { v4 as uuidv4 } from 'uuid';
+import { Eye } from 'lucide-react';
 import { sendInvitationEmail } from '@/lib/azure-email';
 import { createClient } from '@/lib/supabase-client'; // Import createClient, removed supabaseAdmin and supabaseServiceKey
 import {
@@ -38,7 +39,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/auth/auth-provider';
 import { SetupInvitationsButton } from '@/components/admin/setup-invitations-button';
-import { UserSlotManagement } from '@/components/admin/user-slot-management';
+import { UserInfoDialog } from '@/components/admin/user-info-dialog';
 import {
   UserProfile,
   // Removed deleteUser, toggleUserStatus imports as they are now handled via API
@@ -54,6 +55,8 @@ function UsersPage() {
 
   const [userToDelete, setUserToDelete] = useState<any | null>(null); // Use 'any' for now
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [isUserInfoDialogOpen, setIsUserInfoDialogOpen] = useState(false);
 
   const [invitation, setInvitation] = useState({
     email: "",
@@ -249,6 +252,21 @@ function UsersPage() {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       toast.error(`Failed to ${action} user ${user.email}: ${errorMessage}`, { id: toastId });
     }
+  };
+
+  const handleViewUserInfo = (user: any) => {
+    setSelectedUser(user);
+    setIsUserInfoDialogOpen(true);
+  };
+
+  const handleUserUpdate = (updatedUser: any) => {
+    setUsersWithDomains(prev => 
+      prev.map(user => user.id === updatedUser.id ? { ...user, ...updatedUser } : user)
+    );
+  };
+
+  const handleUserDelete = (userId: string) => {
+    setUsersWithDomains(prev => prev.filter(user => user.id !== userId));
   };
 
   const handleDeleteUser = async (id: string) => {
@@ -489,48 +507,57 @@ function UsersPage() {
               </TableRow>
             ) : usersWithDomains.map((user) => ( // Map over the new state variable
               // Ensure no extra whitespace between TableCell elements
-              <TableRow key={user.id}><TableCell>{user.email}</TableCell><TableCell><span className={getRoleBadgeStyle(user.role)}>{formatRole(user.role)}</span></TableCell><TableCell><span className={user.status === "pending" ? "bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs font-medium" : user.active ? "bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium" : "bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-xs font-medium"}>{user.status === "pending" ? "Pending" : user.active ? "Active" : "Inactive"}</span></TableCell><TableCell>{user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}</TableCell><TableCell>{/* Cell for Assigned Domains */ user.domain_names && user.domain_names.length > 0 ? user.domain_names.join(', ') : <span className="text-xs text-gray-500">None</span>}</TableCell><TableCell className="text-right"><div className="flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => handleRefreshUserStatus(user.id)}>Refresh Status</Button><Button variant="ghost" size="sm" onClick={() => router.push(`/users/${user.id}`)}>Edit</Button><Button variant="ghost" size="sm" onClick={() => handleToggleUserStatus(user.id)}>{user.active ? "Deactivate" : "Activate"}</Button><Button variant="ghost" size="sm" onClick={() => { setUserToDelete(user); setIsDeleteDialogOpen(true); }} className="text-red-600 hover:text-red-900 hover:bg-red-100">Delete</Button></div></TableCell></TableRow>
+              <TableRow key={user.id}>
+                <TableCell>{user.email}</TableCell>
+                <TableCell>
+                  <span className={getRoleBadgeStyle(user.role)}>
+                    {formatRole(user.role)}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <span className={user.status === "pending" ? "bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs font-medium" : user.active ? "bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium" : "bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-xs font-medium"}>
+                    {user.status === "pending" ? "Pending" : user.active ? "Active" : "Inactive"}
+                  </span>
+                </TableCell>
+                <TableCell>{user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}</TableCell>
+                <TableCell>
+                  {user.domain_names && user.domain_names.length > 0 ? 
+                    user.domain_names.join(', ') : 
+                    <span className="text-xs text-gray-500">None</span>
+                  }
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => handleViewUserInfo(user)}
+                    className="flex items-center gap-2"
+                  >
+                    <Eye className="h-4 w-4" />
+                    View Info
+                  </Button>
+                </TableCell>
+              </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
       </div>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete User</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete the user {userToDelete?.email}? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsDeleteDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={async () => {
-                if (userToDelete) {
-                  await handleDeleteUser(userToDelete.id);
-                  setIsDeleteDialogOpen(false);
-                }
-              }}
-            >
-              Delete User
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Domain Slot Management Section */}
-      <div className="mt-8 border-t pt-8">
-        <UserSlotManagement />
-      </div>
+      {/* User Info Dialog */}
+      {selectedUser && (
+        <UserInfoDialog
+          user={selectedUser}
+          isOpen={isUserInfoDialogOpen}
+          onClose={() => {
+            setIsUserInfoDialogOpen(false);
+            setSelectedUser(null);
+          }}
+          onUserUpdate={handleUserUpdate}
+          onUserDelete={handleUserDelete}
+        />
+      )}
     </DashboardLayout>
   );
 }
