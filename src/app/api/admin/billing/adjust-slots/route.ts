@@ -252,12 +252,6 @@ export async function GET(request: NextRequest) {
       .from('billing_plans')
       .select(`
         *,
-        user_profiles (
-          id,
-          email,
-          name,
-          role
-        ),
         billing_plan_templates (
           name,
           description
@@ -267,8 +261,21 @@ export async function GET(request: NextRequest) {
     if (userId) {
       query = query.eq('user_id', userId);
     } else if (userEmail) {
-      // Join with user_profiles to filter by email
-      query = query.eq('user_profiles.email', userEmail);
+      // First get the user ID from user_profiles
+      const { data: userProfile } = await supabaseAdmin
+        .from('user_profiles')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+      
+      if (userProfile) {
+        query = query.eq('user_id', userProfile.id);
+      } else {
+        return NextResponse.json({
+          success: true,
+          billing_plans: []
+        });
+      }
     }
 
     const { data: billingPlans, error: plansError } = await query

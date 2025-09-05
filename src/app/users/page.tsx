@@ -38,7 +38,6 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/auth/auth-provider';
-import { SetupInvitationsButton } from '@/components/admin/setup-invitations-button';
 import { UserInfoDialog } from '@/components/admin/user-info-dialog';
 import {
   UserProfile,
@@ -371,12 +370,6 @@ function UsersPage() {
           </p>
         </div>
         <div className="flex space-x-2">
-          {isAdmin && (
-            <>
-              <SetupInvitationsButton />
-              {/* Removed manual sync button since we now have real-time updates */}
-            </>
-          )}
 
           {isAdmin ? (
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
