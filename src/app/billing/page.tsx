@@ -16,9 +16,11 @@ import {
   CheckCircle, 
   AlertTriangle,
   Crown,
-  Globe
+  Globe,
+  Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { PurchaseDomainSlot } from '@/components/billing/purchase-domain-slot';
 
 interface BillingInfo {
   available_slots: number;
@@ -243,82 +245,50 @@ export default function BillingPage() {
           </Alert>
         )}
 
-        {/* Available Plans */}
-        <div>
-          <h2 className="text-2xl font-semibold mb-4">Available Plans</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {planTemplates.map((plan) => (
-              <Card key={plan.id} className={`relative ${
-                billingInfo?.plan_name === plan.name ? 'ring-2 ring-primary' : ''
-              }`}>
-                {billingInfo?.plan_name === plan.name && (
-                  <Badge className="absolute -top-2 left-4 bg-primary">
-                    Current Plan
-                  </Badge>
-                )}
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    {plan.name}
-                    <span className="text-2xl font-bold">${plan.base_price}</span>
-                  </CardTitle>
-                  <CardDescription>{plan.description}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-4 w-4 text-green-500" />
-                      <span className="text-sm">{plan.included_domain_slots} domains included</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-4 w-4 text-green-500" />
-                      <span className="text-sm">
-                        ${plan.price_per_additional_slot} per additional domain
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-4 w-4 text-green-500" />
-                      <span className="text-sm">
-                        {plan.max_domain_slots ? `Up to ${plan.max_domain_slots} domains` : 'Unlimited domains'}
-                      </span>
-                    </div>
-                  </div>
+        {/* Purchase Domain Slot */}
+        {billingInfo && (
+          <PurchaseDomainSlot
+            currentSlots={billingInfo.total_slots}
+            availableSlots={billingInfo.available_slots}
+            planName={billingInfo.plan_name}
+            onSlotPurchased={fetchBillingInfo}
+          />
+        )}
 
-                  {billingInfo?.plan_name === plan.name ? (
-                    <Button disabled className="w-full">
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Current Plan
-                    </Button>
-                  ) : (
-                    <Button 
-                      className="w-full"
-                      onClick={() => handleUpgrade(plan.id)}
-                    >
-                      <CreditCard className="h-4 w-4 mr-2" />
-                      Upgrade to {plan.name}
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-
-        {/* Billing History Placeholder */}
+        {/* Billing History */}
         <Card>
           <CardHeader>
-            <CardTitle>Billing History</CardTitle>
+            <CardTitle>Recent Transactions</CardTitle>
             <CardDescription>
-              View your past transactions and invoices.
+              Your domain slot purchases and billing history.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-center py-8 text-muted-foreground">
               <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No billing history available yet.</p>
-              <p className="text-sm">Your transactions will appear here once you have an active subscription.</p>
+              <p className="text-sm">Your domain slot purchases will appear here.</p>
             </div>
           </CardContent>
         </Card>
+
+        {/* Upcoming Billing */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Upcoming Billing</CardTitle>
+            <CardDescription>
+              Your next scheduled payments and renewals.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center py-8 text-muted-foreground">
+              <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No upcoming billing scheduled.</p>
+              <p className="text-sm">Domain slots are purchased individually as needed.</p>
+            </div>
+          </CardContent>
+        </Card>
+
       </div>
     </DashboardLayout>
   );

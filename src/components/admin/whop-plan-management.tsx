@@ -33,7 +33,7 @@ import {
   ExternalLink, 
   CreditCard, 
   Globe,
-  Sync,
+  RotateCw,
   CheckCircle,
   AlertTriangle,
   Clock
@@ -172,7 +172,7 @@ export function WhopPlanManagement() {
                 Refresh
               </Button>
               <Button onClick={syncPlans} disabled={syncing || loading}>
-                <Sync className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+                <RotateCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
                 {syncing ? 'Syncing...' : 'Sync from Whop'}
               </Button>
             </div>

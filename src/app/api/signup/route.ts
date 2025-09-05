@@ -115,10 +115,49 @@ export async function POST(request: NextRequest) {
 
       console.log(`[API Signup] User profile created successfully for ${email}, ID: ${userId}`);
 
+      // Step 5: Assign default billing plan ($50/slot)
+      try {
+        // Get the Premium Domain Slot plan template ($50/slot)
+        const { data: planTemplate, error: templateError } = await supabaseAdmin
+          .from('billing_plan_templates')
+          .select('*')
+          .eq('whop_plan_id', 'plan_KmHruy3fDVOtP')
+          .single();
+
+        if (planTemplate && !templateError) {
+          // Create billing plan with default $50/slot plan
+          const { error: billingPlanError } = await supabaseAdmin
+            .from('billing_plans')
+            .insert({
+              user_id: userId,
+              plan_template_id: planTemplate.id,
+              domain_slots_total: planTemplate.included_domain_slots || 1,
+              domain_slots_used: 0,
+              effective_base_price: planTemplate.base_price,
+              effective_price_per_slot: planTemplate.price_per_additional_slot,
+              effective_domain_limit: planTemplate.max_domain_slots,
+              status: 'active',
+              payment_provider: 'whop'
+            });
+
+          if (billingPlanError) {
+            console.error('[API Signup] Error creating default billing plan:', billingPlanError);
+            // Non-critical error, continue with signup
+          } else {
+            console.log(`[API Signup] Assigned default $50/slot plan to user ${email}`);
+          }
+        } else {
+          console.warn('[API Signup] Default plan template not found - user will need manual plan assignment');
+        }
+      } catch (planError) {
+        console.error('[API Signup] Error setting up default billing plan:', planError);
+        // Non-critical error, continue with signup
+      }
+
       // --- End of logic moved from handleCompleteSignup ---
 
-      // 5. Return success response
-      return NextResponse.json({ success: true, message: 'Account created successfully.' }, { status: 201 }); // 201 Created
+      // 6. Return success response
+      return NextResponse.json({ success: true, message: 'Account created successfully with default billing plan.' }, { status: 201 }); // 201 Created
 
     } catch (postCreationError) {
       // Cleanup: Delete the auth user if profile creation or marking invitation failed
