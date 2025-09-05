@@ -69,6 +69,7 @@ interface BillingPlan {
   billing_plan_templates?: {
     name: string;
     description: string;
+    whop_plan_id?: string;
   };
 }
 
