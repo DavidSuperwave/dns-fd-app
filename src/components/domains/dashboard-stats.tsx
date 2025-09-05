@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -11,10 +12,10 @@ import {
   CreditCard, 
   TrendingUp,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
-import { PurchaseDomainSlot } from "../billing/purchase-domain-slot";
 
 interface DomainStats {
   totalDomains: number;
@@ -27,10 +28,10 @@ interface DomainStats {
 }
 
 export function DashboardStats() {
+  const router = useRouter();
   const [stats, setStats] = useState<DomainStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showPurchaseDialog, setShowPurchaseDialog] = useState(false);
 
   useEffect(() => {
     fetchStats();
@@ -74,9 +75,8 @@ export function DashboardStats() {
     }
   };
 
-  const handlePurchaseComplete = () => {
-    fetchStats(); // Refresh stats after purchase
-    toast.success("Domain slot purchased successfully!");
+  const handleGoToBilling = () => {
+    router.push('/billing');
   };
 
   if (loading) {
@@ -178,7 +178,7 @@ export function DashboardStats() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Expand Capacity</CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-primary">
@@ -190,11 +190,12 @@ export function DashboardStats() {
             <Button 
               className="w-full mt-3" 
               size="sm"
-              onClick={() => setShowPurchaseDialog(!showPurchaseDialog)}
+              onClick={handleGoToBilling}
               disabled={loading}
             >
-              <TrendingUp className="h-4 w-4 mr-2" />
-              {showPurchaseDialog ? 'Hide' : 'Purchase Slot'}
+              <CreditCard className="h-4 w-4 mr-2" />
+              Purchase Slot
+              <ExternalLink className="h-3 w-3 ml-1" />
             </Button>
           </CardContent>
         </Card>
@@ -219,25 +220,17 @@ export function DashboardStats() {
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={() => setShowPurchaseDialog(!showPurchaseDialog)}
+                onClick={handleGoToBilling}
                 className="ml-4"
               >
-                {showPurchaseDialog ? 'Hide' : 'Upgrade'}
+                Upgrade
+                <ExternalLink className="h-3 w-3 ml-1" />
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Purchase Component */}
-      {showPurchaseDialog && (
-        <PurchaseDomainSlot
-          currentSlots={stats.totalSlots}
-          availableSlots={stats.availableSlots}
-          planName={stats.planName}
-          onSlotPurchased={handlePurchaseComplete}
-        />
-      )}
     </div>
   );
 }
