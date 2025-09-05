@@ -40,8 +40,8 @@ export function DashboardStats() {
     try {
       setLoading(true);
       
-      // Fetch domain count
-      const domainsResponse = await fetch('/api/cloudflare/domains');
+      // Fetch domain count from Supabase (user-specific or admin total)
+      const domainsResponse = await fetch('/api/domains/user-stats');
       const domainsData = await domainsResponse.json();
       
       // Fetch billing info for slots
@@ -49,7 +49,7 @@ export function DashboardStats() {
       const billingData = await billingResponse.json();
 
       if (domainsResponse.ok && billingResponse.ok) {
-        const totalDomains = domainsData.domains?.length || 0;
+        const totalDomains = domainsData.domainCount || 0;
         const sendCapacity = totalDomains * 500; // 500 sends per domain
         
         setStats({
@@ -165,7 +165,7 @@ export function DashboardStats() {
               {stats.sendCapacity.toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {stats.totalDomains} domains × 500 sends each
+              {stats.totalDomains} {stats.totalDomains === 1 ? 'domain' : 'domains'} × 500 sends each
             </p>
             <div className="flex items-center mt-3 text-xs text-green-600">
               <CheckCircle2 className="h-3 w-3 mr-1" />
