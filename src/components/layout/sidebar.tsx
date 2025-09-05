@@ -61,7 +61,7 @@ export function Sidebar({ isAdmin }: SidebarProps) {
   const pathname = usePathname();
 
   return (
-    <div className="flex h-full w-64 flex-col border-r bg-background">
+    <div className="sticky top-0 flex h-screen w-64 flex-col border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
       {/* Logo */}
       <div className="flex h-16 items-center border-b px-6">
         <Link href="/domains" className="flex items-center gap-2">
@@ -76,7 +76,7 @@ export function Sidebar({ isAdmin }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 p-4">
+      <nav className="flex-1 overflow-y-auto space-y-1 p-4 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
         {/* User Navigation */}
         <div className="space-y-1">
           <SidebarItem 

@@ -68,14 +68,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <ScanContext.Provider value={scanContextValue}>
-      <div className="flex min-h-screen">
+      <div className="flex h-screen overflow-hidden">
         {/* Sidebar */}
         <Sidebar isAdmin={isAdmin} />
         
         {/* Main Content */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col overflow-hidden">
           {/* Top Header */}
-          <header className="sticky top-0 z-10 border-b bg-background">
+          <header className="flex-shrink-0 border-b bg-background z-10">
             <div className="flex h-16 items-center justify-between px-6">
               {/* Scan Status */}
               <div className="flex items-center">
@@ -103,8 +103,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
           </header>
           
-          {/* Page Content */}
-          <main className="flex-1 p-6">
+          {/* Page Content - Scrollable */}
+          <main className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
             {children}
           </main>
         </div>
