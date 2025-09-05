@@ -39,6 +39,7 @@ import {
   Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { SetupWhopPlansButton } from './setup-whop-plans-button';
 
 interface WhopPlan {
   id: string;
@@ -165,6 +166,7 @@ export function WhopPlanManagement() {
               </CardDescription>
             </div>
             <div className="flex gap-2">
+              <SetupWhopPlansButton />
               <Button variant="outline" onClick={fetchPlanData} disabled={loading}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
