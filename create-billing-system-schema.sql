@@ -256,6 +256,9 @@ CREATE POLICY "Allow service role full access" ON public.billing_history
 CREATE POLICY "Allow service role full access" ON public.pricing_history
     FOR ALL TO service_role USING (true);
 
+-- 9. Add unique constraint to name column for conflict resolution
+ALTER TABLE public.billing_plan_templates ADD CONSTRAINT billing_plan_templates_name_unique UNIQUE (name);
+
 COMMIT;
 
 -- Insert default plan templates
