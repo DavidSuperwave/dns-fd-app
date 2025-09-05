@@ -34,14 +34,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Check if user is admin
-    const { data: userProfile } = await supabase
-      .from('user_profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (userProfile?.role !== 'admin') {
+    // Check if user is admin (same logic as existing endpoints)
+    const isAdmin = user.email === 'admin@superwave.io' || user.user_metadata?.role === 'admin';
+    
+    if (!isAdmin) {
+      console.warn(`[API Admin Adjust Slots] Non-admin user attempt: ${user.email}`);
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
@@ -240,14 +237,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Check if user is admin
-    const { data: userProfile } = await supabase
-      .from('user_profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (userProfile?.role !== 'admin') {
+    // Check if user is admin (same logic as existing endpoints)
+    const isAdmin = user.email === 'admin@superwave.io' || user.user_metadata?.role === 'admin';
+    
+    if (!isAdmin) {
+      console.warn(`[API Admin Adjust Slots] Non-admin user attempt: ${user.email}`);
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
