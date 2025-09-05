@@ -38,6 +38,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/auth/auth-provider';
 import { SetupInvitationsButton } from '@/components/admin/setup-invitations-button';
+import { UserSlotManagement } from '@/components/admin/user-slot-management';
 import {
   UserProfile,
   // Removed deleteUser, toggleUserStatus imports as they are now handled via API
@@ -525,6 +526,11 @@ function UsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Domain Slot Management Section */}
+      <div className="mt-8 border-t pt-8">
+        <UserSlotManagement />
+      </div>
     </DashboardLayout>
   );
 }

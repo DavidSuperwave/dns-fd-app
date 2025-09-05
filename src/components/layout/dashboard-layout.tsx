@@ -170,6 +170,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   </NavItem>
                 </>
               )}
+              <NavItem href="/billing" active={pathname === "/billing"}>
+                Billing
+              </NavItem>
               <NavItem href="/settings" active={pathname === "/settings"}>
                 Settings
               </NavItem>
