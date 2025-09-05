@@ -63,8 +63,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create Whop checkout session
-    const whopResponse = await fetch('https://api.whop.com/v2/checkout/sessions', {
+    // Create Whop checkout session  
+    const whopResponse = await fetch('https://api.whop.com/v5/checkout/sessions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.WHOP_API_KEY}`,

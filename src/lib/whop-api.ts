@@ -1,8 +1,9 @@
 // Whop API integration for plan management
 // Based on https://docs.whop.com/api
 
-const WHOP_API_BASE = 'https://api.whop.com/api/v2';
+const WHOP_API_BASE = 'https://api.whop.com/api/v5';
 const WHOP_API_KEY = process.env.WHOP_API_KEY;
+const WHOP_PRODUCT_ID = 'prod_gBkccTFAkZwYi'; // Your DNS service product
 
 export interface WhopPlan {
   id: string;
@@ -60,15 +61,16 @@ async function whopRequest(endpoint: string, options: RequestInit = {}) {
   return response.json();
 }
 
-// Fetch all plans from Whop
+// Fetch all plans from Whop product
 export async function getWhopPlans(): Promise<WhopPlanWithSlots[]> {
   try {
-    const data = await whopRequest('/plans');
+    // Fetch plans from specific product using v5 API
+    const data = await whopRequest(`/company/products/${WHOP_PRODUCT_ID}/plans`);
     
     // Transform Whop plans to include domain slots from metadata
-    return data.data.map((plan: WhopPlan): WhopPlanWithSlots => ({
+    return data.map((plan: WhopPlan): WhopPlanWithSlots => ({
       ...plan,
-      domain_slots: plan.metadata?.domain_slots || 5, // Default to 5 if not set
+      domain_slots: plan.metadata?.domain_slots || 1, // Default to 1 slot
     }));
   } catch (error) {
     console.error('Error fetching Whop plans:', error);

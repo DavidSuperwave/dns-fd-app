@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     const supabaseAdmin = createAdminClient();
 
     // Verify the checkout session with Whop to get metadata
-    const whopResponse = await fetch(`https://api.whop.com/v2/checkout/sessions/${session_id}`, {
+    const whopResponse = await fetch(`https://api.whop.com/v5/checkout/sessions/${session_id}`, {
       headers: {
         'Authorization': `Bearer ${process.env.WHOP_API_KEY}`,
       }
