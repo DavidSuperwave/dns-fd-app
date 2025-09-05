@@ -40,6 +40,7 @@ import { useAuth } from "../../components/auth/auth-provider";
 import { createDnsRecord } from "../../lib/cloudflare-api";
 // Add this new line to import the Tabs components
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { DashboardStats } from "../../components/domains/dashboard-stats";
 
 
 // Domain assignment interface
@@ -1695,7 +1696,10 @@ export default function DomainsPage() {
   };
   return (
     <DashboardLayout>
-      <div className="w-full max-w-full px-4 py-6 md:px-6 lg:px-8">
+      <div className="w-full max-w-full">
+        {/* Dashboard Stats */}
+        <DashboardStats />
+        
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <h1 className="text-3xl font-bold tracking-tight">Domains</h1>
           <div className="flex flex-col sm:flex-row gap-2">
