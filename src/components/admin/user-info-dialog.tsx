@@ -121,7 +121,42 @@ export function UserInfoDialog({ user, isOpen, onClose, onUserUpdate, onUserDele
         setCustomBasePrice(billingData.billing_plans[0].effective_base_price?.toString() || '');
         setCustomSlotPrice(billingData.billing_plans[0].effective_price_per_slot?.toString() || '');
       } else {
-        setBillingPlan(null);
+        // No billing plan found - try to create one by making a zero adjustment
+        console.log('No billing plan found, attempting to create one...');
+        try {
+          const createResponse = await fetch('/api/admin/billing/adjust-slots', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: user.id,
+              slots_adjustment: 3, // Give them 3 free slots to start
+              reason: 'Initial plan creation - 3 free trial slots',
+              is_free: true,
+              admin_notes: 'Auto-created billing plan for existing user'
+            })
+          });
+          
+          if (createResponse.ok) {
+            const createData = await createResponse.json();
+            // Refetch billing data
+            const retryResponse = await fetch(`/api/admin/billing/adjust-slots?user_id=${user.id}`);
+            if (retryResponse.ok) {
+              const retryData = await retryResponse.json();
+              if (retryData.billing_plans.length > 0) {
+                setBillingPlan(retryData.billing_plans[0]);
+                setCustomBasePrice(retryData.billing_plans[0].effective_base_price?.toString() || '');
+                setCustomSlotPrice(retryData.billing_plans[0].effective_price_per_slot?.toString() || '');
+                toast.success('Created billing plan with 3 free trial slots');
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error creating billing plan:', error);
+        }
+        
+        if (!billingPlan) {
+          setBillingPlan(null);
+        }
       }
 
       // Fetch user domains

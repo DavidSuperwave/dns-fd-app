@@ -41,7 +41,22 @@ export async function GET(
     const supabaseAdmin = createAdminClient();
     const { userId } = await params;
 
-    // Get domains assigned to this user
+    // First get the user's email
+    const { data: targetUser, error: userError } = await supabaseAdmin
+      .from('user_profiles')
+      .select('email')
+      .eq('id', userId)
+      .single();
+
+    if (userError || !targetUser) {
+      console.error('Error getting user profile:', userError);
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    // Get domains assigned to this user by email
     const { data: domainAssignments, error: assignmentsError } = await supabaseAdmin
       .from('domain_assignments')
       .select(`
@@ -57,7 +72,7 @@ export async function GET(
           has_files
         )
       `)
-      .eq('user_email', userId); // Assuming userId is actually email for domain assignments
+      .eq('user_email', targetUser.email);
 
     // Also get domains directly owned by user_id
     const { data: ownedDomains, error: ownedError } = await supabaseAdmin

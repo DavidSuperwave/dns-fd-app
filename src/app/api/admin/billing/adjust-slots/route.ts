@@ -82,18 +82,43 @@ export async function POST(request: NextRequest) {
 
     if (planError || !billingPlan) {
       // Create a new billing plan with manual management
-      const { data: manualTemplate } = await supabaseAdmin
+      let manualTemplate = null;
+      
+      // Try to get Free Trial template, if not found, create a basic one
+      const { data: existingTemplate } = await supabaseAdmin
         .from('billing_plan_templates')
         .select('*')
         .eq('name', 'Free Trial')
         .single();
+      
+      if (existingTemplate) {
+        manualTemplate = existingTemplate;
+      } else {
+        // Create a basic template if none exists
+        const { data: newTemplate } = await supabaseAdmin
+          .from('billing_plan_templates')
+          .insert({
+            name: 'Free Trial',
+            description: 'Default free trial plan',
+            included_domain_slots: 3,
+            base_price: 0,
+            price_per_additional_slot: 0,
+            max_domain_slots: 10,
+            is_active: true,
+            created_by: user.id
+          })
+          .select()
+          .single();
+        
+        manualTemplate = newTemplate;
+      }
 
       const { data: newPlan, error: createError } = await supabaseAdmin
         .from('billing_plans')
         .insert({
           user_id: targetUserId,
           plan_template_id: manualTemplate?.id,
-          domain_slots_total: Math.max(0, slots_adjustment),
+          domain_slots_total: Math.max(manualTemplate?.included_domain_slots || 3, slots_adjustment),
           domain_slots_used: 0,
           effective_base_price: 0,
           effective_price_per_slot: 0,
