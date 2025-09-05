@@ -5,7 +5,7 @@ import { createServerClient } from '@supabase/ssr';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { userId: string } }
+  { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
     // Verify admin access
@@ -39,7 +39,7 @@ export async function GET(
     }
 
     const supabaseAdmin = createAdminClient();
-    const { userId } = params;
+    const { userId } = await params;
 
     // Get domains assigned to this user
     const { data: domainAssignments, error: assignmentsError } = await supabaseAdmin

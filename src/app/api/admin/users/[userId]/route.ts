@@ -5,7 +5,7 @@ import { createServerClient } from '@supabase/ssr';
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { userId: string } }
+  { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
     // Verify admin access
@@ -39,7 +39,7 @@ export async function DELETE(
     }
 
     const supabaseAdmin = createAdminClient();
-    const { userId } = params;
+    const { userId } = await params;
 
     // Don't allow deleting yourself
     if (userId === user.id) {

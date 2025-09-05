@@ -5,7 +5,7 @@ import { createServerClient } from '@supabase/ssr';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { userId: string } }
+  { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
     // Verify admin access
@@ -39,7 +39,7 @@ export async function POST(
     }
 
     const supabaseAdmin = createAdminClient();
-    const { userId } = params;
+    const { userId } = await params;
 
     // Get current user status
     const { data: currentUser, error: getCurrentError } = await supabaseAdmin
