@@ -62,15 +62,19 @@ export async function POST(request: Request) {
 
       // Generate token and store invitation in database
       const token = crypto.randomUUID();
+      
+      // First, let's check what columns exist in the table
+      console.log('[Invitation API] Attempting to insert invitation record');
+      
       const { error: dbError } = await supabaseAdmin
         .from('invitations')
         .insert({
           email,
           role,
           token,
-          created_by: 'system',
           status: 'pending',
           expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days from now
+          // Removed created_by as it might not exist in your table schema
         });
 
       if (dbError) {
