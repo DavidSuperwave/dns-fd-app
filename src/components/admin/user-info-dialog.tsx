@@ -39,8 +39,7 @@ import {
   Crown,
   CheckCircle,
   AlertTriangle,
-  Eye,
-  Settings
+  Eye
 } from 'lucide-react';
 import { toast } from 'sonner';
 
