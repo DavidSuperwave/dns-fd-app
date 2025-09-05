@@ -293,7 +293,12 @@ export function UserInfoDialog({ user, isOpen, onClose, onUserUpdate, onUserDele
       const plansResponse = await fetch('/api/admin/billing/templates');
       const plansData = await plansResponse.json();
       
-      const planTemplate = plansData.find((plan: any) => plan.whop_plan_id === selectedPlanId);
+      if (!plansResponse.ok || !plansData.templates) {
+        toast.error('Failed to fetch plan templates');
+        return;
+      }
+      
+      const planTemplate = plansData.templates.find((plan: any) => plan.whop_plan_id === selectedPlanId);
       if (!planTemplate) {
         toast.error('Plan template not found');
         return;
