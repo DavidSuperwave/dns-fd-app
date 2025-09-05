@@ -39,7 +39,8 @@ import {
   Crown,
   CheckCircle,
   AlertTriangle,
-  Eye
+  Eye,
+  Settings
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -101,6 +102,8 @@ export function UserInfoDialog({ user, isOpen, onClose, onUserUpdate, onUserDele
   const [adminNotes, setAdminNotes] = useState('');
   const [customBasePrice, setCustomBasePrice] = useState('');
   const [customSlotPrice, setCustomSlotPrice] = useState('');
+  const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [assigningPlan, setAssigningPlan] = useState(false);
 
   // Load user data when dialog opens
   useEffect(() => {
@@ -275,6 +278,49 @@ export function UserInfoDialog({ user, isOpen, onClose, onUserUpdate, onUserDele
     } catch (error) {
       console.error('Error adjusting slots:', error);
       toast.error('Failed to adjust domain slots');
+    }
+  };
+
+  const handleAssignPlan = async () => {
+    if (!selectedPlanId) {
+      toast.error('Please select a plan to assign');
+      return;
+    }
+
+    setAssigningPlan(true);
+    try {
+      // First, get the plan template by whop_plan_id
+      const plansResponse = await fetch('/api/admin/billing/templates');
+      const plansData = await plansResponse.json();
+      
+      const planTemplate = plansData.find((plan: any) => plan.whop_plan_id === selectedPlanId);
+      if (!planTemplate) {
+        toast.error('Plan template not found');
+        return;
+      }
+
+      const response = await fetch(`/api/admin/users/${user.id}/assign-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan_template_id: planTemplate.id
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast.success(`Successfully assigned ${data.plan_name} to user`);
+        await fetchUserData();
+        setSelectedPlanId('');
+      } else {
+        throw new Error(data.error || 'Failed to assign plan');
+      }
+    } catch (error) {
+      console.error('Error assigning plan:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to assign plan');
+    } finally {
+      setAssigningPlan(false);
     }
   };
 
@@ -497,6 +543,94 @@ export function UserInfoDialog({ user, isOpen, onClose, onUserUpdate, onUserDele
                         </p>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Plan Assignment */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Assign Pricing Plan</CardTitle>
+                    <CardDescription>
+                      Change the user's pricing plan (affects their domain slot cost)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Select Plan</Label>
+                        <Select value={selectedPlanId} onValueChange={setSelectedPlanId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Choose pricing plan..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="plan_KmHruy3fDVOtP">
+                              <div className="flex justify-between items-center w-full">
+                                <span>Premium Domain Slot</span>
+                                <span className="text-sm text-muted-foreground ml-4">$50/slot</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="plan_6U0rRsvDL9VvM">
+                              <div className="flex justify-between items-center w-full">
+                                <span>Professional Domain Slot</span>
+                                <span className="text-sm text-muted-foreground ml-4">$40/slot</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="plan_4uR7cOFf9Ruxl">
+                              <div className="flex justify-between items-center w-full">
+                                <span>Business Domain Slot</span>
+                                <span className="text-sm text-muted-foreground ml-4">$30/slot</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="plan_QRc2RVkLKgK5l">
+                              <div className="flex justify-between items-center w-full">
+                                <span>Growth Domain Slot</span>
+                                <span className="text-sm text-muted-foreground ml-4">$25/slot</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="plan_xj1hzkSUCPewx">
+                              <div className="flex justify-between items-center w-full">
+                                <span>Starter Domain Slot</span>
+                                <span className="text-sm text-muted-foreground ml-4">$20/slot</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="plan_ktRtPxomsvkPt">
+                              <div className="flex justify-between items-center w-full">
+                                <span>Basic Domain Slot</span>
+                                <span className="text-sm text-muted-foreground ml-4">$15/slot</span>
+                              </div>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-end">
+                        <Button 
+                          onClick={handleAssignPlan}
+                          disabled={!selectedPlanId || assigningPlan}
+                          className="w-full"
+                        >
+                          {assigningPlan ? (
+                            <>
+                              <div className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full" />
+                              Assigning...
+                            </>
+                          ) : (
+                            <>
+                              <Settings className="h-4 w-4 mr-2" />
+                              Assign Plan
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    {billingPlan?.billing_plan_templates?.whop_plan_id && (
+                      <div className="p-3 bg-blue-50 rounded-lg">
+                        <p className="text-sm text-blue-700">
+                          <strong>Current Plan:</strong> {billingPlan.billing_plan_templates.name} 
+                          ({billingPlan.billing_plan_templates.whop_plan_id})
+                        </p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
