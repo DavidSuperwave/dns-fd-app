@@ -176,7 +176,20 @@ ALTER TABLE public.domain_slot_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.billing_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pricing_history ENABLE ROW LEVEL SECURITY;
 
--- 8. RLS Policies
+-- 8. RLS Policies (Drop existing policies first to avoid conflicts)
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Allow admins to manage plan templates" ON public.billing_plan_templates;
+DROP POLICY IF EXISTS "Allow users to read active plan templates" ON public.billing_plan_templates;
+DROP POLICY IF EXISTS "Allow users to read own billing plans" ON public.billing_plans;
+DROP POLICY IF EXISTS "Allow admins to manage billing plans" ON public.billing_plans;
+DROP POLICY IF EXISTS "Allow users to read own slot transactions" ON public.domain_slot_transactions;
+DROP POLICY IF EXISTS "Allow users to read own billing history" ON public.billing_history;
+DROP POLICY IF EXISTS "Allow service role full access" ON public.billing_plan_templates;
+DROP POLICY IF EXISTS "Allow service role full access" ON public.billing_plans;
+DROP POLICY IF EXISTS "Allow service role full access" ON public.domain_slot_transactions;
+DROP POLICY IF EXISTS "Allow service role full access" ON public.billing_history;
+DROP POLICY IF EXISTS "Allow service role full access" ON public.pricing_history;
 
 -- Billing Plan Templates - Admins can manage, users can read active ones
 CREATE POLICY "Allow admins to manage plan templates" ON public.billing_plan_templates
@@ -256,8 +269,17 @@ CREATE POLICY "Allow service role full access" ON public.billing_history
 CREATE POLICY "Allow service role full access" ON public.pricing_history
     FOR ALL TO service_role USING (true);
 
--- 9. Add unique constraint to name column for conflict resolution
-ALTER TABLE public.billing_plan_templates ADD CONSTRAINT billing_plan_templates_name_unique UNIQUE (name);
+-- 9. Add unique constraint to name column for conflict resolution (if not exists)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'billing_plan_templates_name_unique' 
+        AND table_name = 'billing_plan_templates'
+    ) THEN
+        ALTER TABLE public.billing_plan_templates ADD CONSTRAINT billing_plan_templates_name_unique UNIQUE (name);
+    END IF;
+END $$;
 
 COMMIT;
 
