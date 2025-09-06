@@ -26,13 +26,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if user is admin
-    const { data: userProfile } = await supabase
-      .from('user_profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (userProfile?.role !== 'admin') {
+    const isAdmin = user.email === 'admin@superwave.io' || user.user_metadata?.role === 'admin';
+    
+    if (!isAdmin) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
@@ -102,13 +98,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is admin
-    const { data: userProfile } = await supabase
-      .from('user_profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (userProfile?.role !== 'admin') {
+    const isAdmin = user.email === 'admin@superwave.io' || user.user_metadata?.role === 'admin';
+    
+    if (!isAdmin) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
@@ -202,13 +194,9 @@ export async function PUT(request: NextRequest) {
     }
 
     // Check if user is admin
-    const { data: userProfile } = await supabase
-      .from('user_profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (userProfile?.role !== 'admin') {
+    const isAdmin = user.email === 'admin@superwave.io' || user.user_metadata?.role === 'admin';
+    
+    if (!isAdmin) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
