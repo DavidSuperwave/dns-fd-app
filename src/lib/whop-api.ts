@@ -61,16 +61,29 @@ async function whopRequest(endpoint: string, options: RequestInit = {}) {
   return response.json();
 }
 
-// Fetch all plans from Whop product
+// Fetch all plans from Whop using v2 API
 export async function getWhopPlans(): Promise<WhopPlanWithSlots[]> {
   try {
-    // Fetch plans from specific product using v5 API
-    const data = await whopRequest(`/company/products/${WHOP_PRODUCT_ID}/plans`);
+    // V2 API: Get all plans with pagination structure
+    const response = await whopRequest(`/plans`);
     
-    // Transform Whop plans to include domain slots from metadata
-    return data.map((plan: WhopPlan): WhopPlanWithSlots => ({
-      ...plan,
-      domain_slots: plan.metadata?.domain_slots || 1, // Default to 1 slot
+    // V2 API returns { pagination: {...}, data: [...] }
+    const plans = response.data || [];
+    
+    // Filter plans by our product and transform
+    const productPlans = plans.filter((plan: any) => plan.product === WHOP_PRODUCT_ID);
+    
+    return productPlans.map((plan: any): WhopPlanWithSlots => ({
+      id: plan.id,
+      name: plan.description || plan.payment_link_description || `Plan ${plan.id}`,
+      description: plan.description,
+      price: parseFloat(plan.renewal_price) * 100, // Convert to cents for consistency
+      currency: plan.base_currency,
+      billing_period: 'monthly', // V2 uses billing_period in days, normalize to monthly
+      metadata: plan.metadata || {},
+      created_at: new Date(plan.created_at * 1000).toISOString(),
+      updated_at: new Date(plan.created_at * 1000).toISOString(),
+      domain_slots: 1, // Each plan represents 1 domain slot purchase
     }));
   } catch (error) {
     console.error('Error fetching Whop plans:', error);
@@ -78,14 +91,22 @@ export async function getWhopPlans(): Promise<WhopPlanWithSlots[]> {
   }
 }
 
-// Get a specific plan by ID
+// Get a specific plan by ID using v2 API
 export async function getWhopPlan(planId: string): Promise<WhopPlanWithSlots> {
   try {
     const data = await whopRequest(`/plans/${planId}`);
     
     return {
-      ...data.data,
-      domain_slots: data.data.metadata?.domain_slots || 5,
+      id: data.id,
+      name: data.description || data.payment_link_description || `Plan ${data.id}`,
+      description: data.description,
+      price: parseFloat(data.renewal_price) * 100, // Convert to cents
+      currency: data.base_currency,
+      billing_period: 'monthly',
+      metadata: data.metadata || {},
+      created_at: new Date(data.created_at * 1000).toISOString(),
+      updated_at: new Date(data.created_at * 1000).toISOString(),
+      domain_slots: 1, // Each plan represents 1 domain slot purchase
     };
   } catch (error) {
     console.error(`Error fetching Whop plan ${planId}:`, error);
