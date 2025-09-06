@@ -63,46 +63,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create Whop checkout session  
-    const whopResponse = await fetch('https://api.whop.com/v5/checkout/sessions', {
-      method: 'POST',
+    // Get plan details from Whop to get direct checkout link
+    const whopResponse = await fetch(`https://api.whop.com/v2/plans/${billingPlan.billing_plan_templates.whop_plan_id}`, {
       headers: {
         'Authorization': `Bearer ${process.env.WHOP_API_KEY}`,
         'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        plan_id: billingPlan.billing_plan_templates.whop_plan_id,
-        metadata: {
-          user_id: user.id,
-          user_email: userProfile.email,
-          billing_plan_id: billingPlan.id,
-          domain_slot_purchase: 'true'
-        },
-        prefill: {
-          email: userProfile.email,
-          name: userProfile.name || userProfile.email
-        }
-      })
+      }
     });
 
     if (!whopResponse.ok) {
       const errorData = await whopResponse.text();
       console.error('Whop API Error:', errorData);
       return NextResponse.json(
-        { error: 'Failed to create checkout session' },
+        { error: 'Failed to get plan details' },
         { status: 500 }
       );
     }
 
-    const sessionData = await whopResponse.json();
+    const planData = await whopResponse.json();
+    
+    // Create checkout URL with metadata as query params
+    const checkoutUrl = new URL(planData.direct_link);
+    checkoutUrl.searchParams.append('user_id', user.id);
+    checkoutUrl.searchParams.append('user_email', userProfile.email);
+    checkoutUrl.searchParams.append('billing_plan_id', billingPlan.id);
+    checkoutUrl.searchParams.append('domain_slot_purchase', 'true');
 
     return NextResponse.json({
       success: true,
-      session_id: sessionData.id,
-      checkout_url: sessionData.checkout_url,
+      session_id: `direct_${Date.now()}`, // Generate a temporary session ID for tracking
+      checkout_url: checkoutUrl.toString(),
       plan_id: billingPlan.billing_plan_templates.whop_plan_id,
-      price: billingPlan.billing_plan_templates.base_price,
-      plan_name: billingPlan.billing_plan_templates.name
+      price: parseFloat(planData.renewal_price),
+      plan_name: planData.description || billingPlan.billing_plan_templates.name
     });
 
   } catch (error) {

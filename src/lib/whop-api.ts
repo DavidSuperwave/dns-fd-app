@@ -1,7 +1,7 @@
 // Whop API integration for plan management
 // Based on https://docs.whop.com/api
 
-const WHOP_API_BASE = 'https://api.whop.com/api/v5';
+const WHOP_API_BASE = 'https://api.whop.com/api/v2';
 const WHOP_API_KEY = process.env.WHOP_API_KEY;
 const WHOP_PRODUCT_ID = 'prod_gBkccTFAkZwYi'; // Your DNS service product
 
