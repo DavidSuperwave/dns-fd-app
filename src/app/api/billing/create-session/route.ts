@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get plan details from Whop to get direct checkout link
-    const whopResponse = await fetch(`https://api.whop.com/v2/plans/${billingPlan.billing_plan_templates.whop_plan_id}`, {
+    const whopResponse = await fetch(`https://api.whop.com/api/v2/plans/${billingPlan.billing_plan_templates.whop_plan_id}`, {
       headers: {
         'Authorization': `Bearer ${process.env.WHOP_API_KEY}`,
         'Content-Type': 'application/json',
