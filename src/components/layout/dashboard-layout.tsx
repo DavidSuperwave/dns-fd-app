@@ -4,7 +4,7 @@ import React, { useEffect, createContext, useState, useContext } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import LogoutButton from "../auth/logout-button";
 import { useAuth } from "../auth/auth-provider";
-import { ScanStatusIndicator } from "../scan/scan-status-indicator";
+// import { ScanStatusIndicator } from "../scan/scan-status-indicator"; // Removed Cloudflare scan
 import { Sidebar } from "./sidebar";
 
 // Removed unused Clock import
@@ -19,9 +19,9 @@ interface ScanContextType {
 
 export const ScanContext = createContext<ScanContextType>({
   scanInProgress: false,
-  setScanInProgress: () => {},
+  setScanInProgress: () => { },
   scanProgress: { current: 0, total: 0 },
-  setScanProgress: () => {},
+  setScanProgress: () => { },
 });
 
 // Hook to use scan context
@@ -34,14 +34,14 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { user, isAdmin, refreshSession } = useAuth();
-  
+
   // Initialize scan state for the context
   const [scanInProgress, setScanInProgress] = useState(false);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0 });
-  
+
   // Get first letter of email for avatar fallback
   const userInitial = user?.email ? user.email[0].toUpperCase() : '?';
-  
+
   // On mount, check if we need to refresh session
   useEffect(() => {
     // Only refresh session once on initial page load
@@ -53,7 +53,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         console.log('[DashboardLayout] Auth state checked, admin status:', { isAdmin });
         window.__initialAuthRefreshDone = true;
       };
-      
+
       updateAuthState();
     }
   }, [refreshSession, isAdmin]);
@@ -71,7 +71,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       <div className="flex h-screen overflow-hidden">
         {/* Sidebar */}
         <Sidebar isAdmin={isAdmin} />
-        
+
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Top Header */}
@@ -82,11 +82,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 {scanInProgress && (
                   <div className="flex items-center text-sm text-muted-foreground">
                     <div className="h-2 w-2 animate-pulse bg-yellow-500 rounded-full mr-2"></div>
-                    <span>Scanning: {Math.round(scanProgress.current/scanProgress.total*100)}%</span>
+                    <span>Scanning: {Math.round(scanProgress.current / scanProgress.total * 100)}%</span>
                   </div>
                 )}
               </div>
-              
+
               {/* User Info */}
               <div className="flex items-center space-x-4">
                 <div className="hidden md:flex items-center gap-2 text-sm text-muted-foreground">
@@ -102,16 +102,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               </div>
             </div>
           </header>
-          
+
           {/* Page Content - Scrollable */}
           <main className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
             {children}
           </main>
         </div>
       </div>
-      
+
       {/* Render the scan status indicator - will only be visible during scans */}
-      <ScanStatusIndicator />
+      {/* <ScanStatusIndicator /> */} {/* Removed Cloudflare scan */}
     </ScanContext.Provider>
   );
 }

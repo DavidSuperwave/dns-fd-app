@@ -159,46 +159,9 @@ export async function DELETE(
         cfZoneIdForLogging = domainData.cloudflare_id; // Update with actual CF ID
         domainNameForLogging = domainData.name || domainNameForLogging; // Update with actual domain name
 
-        // Attempt Cloudflare Deletion
-        const cfToken = process.env.CLOUDFLARE_API_TOKEN;
-        if (cfZoneIdForLogging && cfToken) {
-            console.log(`[API Domain Delete] Attempting Cloudflare deletion for zone ID: ${cfZoneIdForLogging} (Domain: ${domainNameForLogging})`);
-            try {
-                const cfResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${cfZoneIdForLogging}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${cfToken}`, 'Content-Type': 'application/json' }
-                });
-                let cfResult = null;
-                try { cfResult = await cfResponse.json(); } catch (e) { /* Ignore parse error */ }
-                console.log(`[API Domain Delete] Cloudflare response for ${cfZoneIdForLogging}: Status ${cfResponse.status}`, cfResult);
-
-                if (!cfResponse.ok) {
-                    cloudflareErrorMessage = cfResult?.errors?.[0]?.message || cfResult?.error || `Cloudflare API Error (Status ${cfResponse.status})`;
-                    console.warn(`[API Domain Delete] Cloudflare deletion failed for ${cfZoneIdForLogging}:`, cloudflareErrorMessage);
-                    if (cfResponse.status === 404 || cloudflareErrorMessage.toLowerCase().includes('invalid zone identifier') || cloudflareErrorMessage.toLowerCase().includes('could not route')) {
-                        cloudflareSkipped = true; // Already gone or invalid ID
-                    } else { cloudflareDeletionSuccessful = false; }
-                } else {
-                    if (cfResult?.success === true) { cloudflareDeletionSuccessful = true; }
-                    else {
-                        cloudflareErrorMessage = cfResult?.errors?.[0]?.message || 'Cloudflare reported success:false';
-                        console.warn(`[API Domain Delete] Cloudflare deletion reported success:false for ${cfZoneIdForLogging}:`, cloudflareErrorMessage);
-                        cloudflareDeletionSuccessful = false;
-                    }
-                }
-            } catch (cfApiError) {
-                console.error(`[API Domain Delete] Network error during Cloudflare API call for ${cfZoneIdForLogging}:`, cfApiError);
-                cloudflareErrorMessage = cfApiError instanceof Error ? cfApiError.message : 'Cloudflare API request failed';
-                cloudflareDeletionSuccessful = false;
-            }
-        } else if (!cfZoneIdForLogging) {
-            console.warn(`[API Domain Delete] No Cloudflare Zone ID found for domain ${domainNameForLogging}. Skipping Cloudflare deletion.`);
-            cloudflareSkipped = true;
-        } else if (!cfToken) {
-            console.error('[API Domain Delete] Missing CLOUDFLARE_API_TOKEN. Skipping Cloudflare deletion.');
-            cloudflareSkipped = true;
-            cloudflareErrorMessage = 'Server configuration error: Missing Cloudflare token.';
-        }
+        // Cloudflare deletion is disabled - always skip
+        cloudflareSkipped = true;
+        console.log(`[API Domain Delete] Cloudflare deletion skipped (integration disabled) for domain ${domainNameForLogging}.`);
 
         // Delete related data (assignments)
         console.log(`[API Domain Delete] Deleting assignments for domain ID ${domainIdToDelete}.`);

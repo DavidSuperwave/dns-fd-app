@@ -20,7 +20,7 @@ import { createClient } from "../../lib/supabase-client"; // Correct import
 import { toast } from "sonner";
 import { useAuth } from "../../components/auth/auth-provider";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
-import { ScanProgressCard } from "../../components/scan/ScanProgressCard";
+// import { ScanProgressCard } from "../../components/scan/ScanProgressCard"; // Removed Cloudflare scan
 
 interface SyncRecord {
   id: number;
@@ -58,7 +58,7 @@ export default function CronMonitorPage() {
 
     calculateNextSyncTime();
     const interval = setInterval(calculateNextSyncTime, 60000); // Update every minute
-    
+
     return () => clearInterval(interval);
   }, []);
 
@@ -72,7 +72,7 @@ export default function CronMonitorPage() {
         .from('domains')
         .select('id')
         .limit(1);
-      
+
       const domainsTableExists = !domainsError || domainsError.code !== '42P01';
 
       const { error: syncError } = await supabase
@@ -80,30 +80,30 @@ export default function CronMonitorPage() {
         .select('id', { count: 'exact', head: true });
 
       const syncTableExists = !syncError || syncError.code !== '42P01';
-      
+
       // Set the tables exist state
       const bothTablesExist = domainsTableExists && syncTableExists;
       setTablesExist(bothTablesExist);
-      
+
       if (!bothTablesExist) {
         setIsLoading(false);
         setSyncHistory([]);
         return;
       }
-      
+
       // Get sync history from Supabase
       const { data, error } = await supabase
         .from('sync_history')
         .select('*')
         .order('timestamp', { ascending: false })
         .limit(10);
-      
+
       if (error) {
         console.error('Error fetching sync history:', error);
         toast.error('Failed to load sync history');
         return;
       }
-      
+
       setSyncHistory(data || []);
     } catch (error) {
       console.error('Error fetching sync history:', error);
@@ -123,10 +123,10 @@ export default function CronMonitorPage() {
     try {
       setIsTriggeringSync(true);
       toast.info('Starting full domain synchronization...');
-      
+
       // Create a key for the API call
       const cronSecret = 'dns-fd-R2wQ9p7X4sK8tL3zY6mN1bV5cX2zZ9mN8bV6xC3';
-      
+
       const response = await fetch('/api/cron/sync?debug=true&full=true', {
         method: 'GET',
         headers: {
@@ -134,17 +134,17 @@ export default function CronMonitorPage() {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to start full sync');
       }
-      
+
       const result = await response.json();
-      
+
       if (result.success) {
         toast.success('Full sync started successfully!');
-        
+
         // Wait a moment before refreshing the history
         setTimeout(() => {
           fetchSyncHistory();
@@ -222,20 +222,20 @@ export default function CronMonitorPage() {
     try {
       setIsTriggeringSync(true);
       toast.info('Simulating Vercel cron job...');
-      
+
       // Ensure scan_progress table exists
       const setupResponse = await fetch('/api/supabase/setup-tables', {
         method: 'POST'
       });
-      
+
       if (!setupResponse.ok) {
         const errorData = await setupResponse.json();
         throw new Error(errorData.error || 'Failed to set up scan_progress table');
       }
-      
+
       // Create a key for the API call
       const cronSecret = 'dns-fd-R2wQ9p7X4sK8tL3zY6mN1bV5cX2zZ9mN8bV6xC3';
-      
+
       const response = await fetch('/api/cron/sync?debug=true', {
         method: 'GET',
         headers: {
@@ -244,17 +244,17 @@ export default function CronMonitorPage() {
           'Authorization': `Bearer ${cronSecret}`
         }
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to simulate cron');
       }
-      
+
       const result = await response.json();
-      
+
       if (result.success) {
         toast.success(`Cron simulation started successfully! ${result.message}`);
-        
+
         // Start auto-refresh by keeping isTriggeringSync true
         // It will be set to false when we detect the sync is complete
         await fetchSyncHistory();
@@ -274,16 +274,16 @@ export default function CronMonitorPage() {
       toast.error('Only administrators can set up tables');
       return;
     }
-    
+
     try {
       setIsTriggeringSync(true);
       toast.info('Setting up tables...');
-      
+
       // First set up scan_progress table
       const setupResponse = await fetch('/api/supabase/setup-tables', {
         method: 'POST'
       });
-      
+
       if (!setupResponse.ok) {
         const errorData = await setupResponse.json();
         throw new Error(errorData.error || 'Failed to set up scan_progress table');
@@ -299,14 +299,14 @@ export default function CronMonitorPage() {
           'Authorization': `Bearer ${cronSecret}`
         }
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to set up tables');
       }
-      
+
       const result = await response.json();
-      
+
       if (result.success) {
         toast.success('Tables set up successfully!');
         setTablesExist(true);
@@ -379,8 +379,8 @@ export default function CronMonitorPage() {
       return;
     }
     if (isTriggeringRedirectSync || isTriggeringSync) {
-         toast.info('Another sync simulation is already running.');
-         return;
+      toast.info('Another sync simulation is already running.');
+      return;
     }
 
     try {
@@ -415,13 +415,13 @@ export default function CronMonitorPage() {
         // Optionally trigger a refresh of relevant data if needed
         // fetchSyncHistory(); // Or fetch data relevant to redirects if you display it
       } else {
-         console.error('Redirect Sync simulation returned success:false:', result);
+        console.error('Redirect Sync simulation returned success:false:', result);
         throw new Error(result.error || 'Unknown error during redirect sync simulation');
       }
     } catch (error) {
       console.error('Error simulating redirect sync:', error);
       toast.error(`Redirect Sync simulation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-       setIsTriggeringRedirectSync(false); // Ensure state is reset on error
+      setIsTriggeringRedirectSync(false); // Ensure state is reset on error
     }
   };
   return (
@@ -480,9 +480,9 @@ export default function CronMonitorPage() {
         )}
 
         {/* Scan Progress Card - New Component */}
-        <div className="mb-6">
+        {/* <div className="mb-6">
           <ScanProgressCard onManualSyncClick={triggerFullSync} />
-        </div>
+        </div> */} {/* Removed Cloudflare scan */}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card>
@@ -530,8 +530,8 @@ export default function CronMonitorPage() {
               )}
             </CardContent>
             <CardFooter className="text-sm text-muted-foreground pt-0">
-              {syncHistory.find(record => record.success) ? 
-                `Duration: ${formatDuration(syncHistory.find(record => record.success)?.duration_ms)}` : 
+              {syncHistory.find(record => record.success) ?
+                `Duration: ${formatDuration(syncHistory.find(record => record.success)?.duration_ms)}` :
                 ''}
             </CardFooter>
           </Card>
@@ -567,13 +567,13 @@ export default function CronMonitorPage() {
               )}
             </CardContent>
             <CardFooter className="text-sm text-muted-foreground pt-0">
-              {syncHistory.length > 0 ? 
+              {syncHistory.length > 0 ?
                 `Avg. duration: ${formatDuration(
                   syncHistory
                     .filter(record => record.duration_ms)
-                    .reduce((sum, record) => sum + (record.duration_ms || 0), 0) / 
-                    syncHistory.filter(record => record.duration_ms).length
-                )}` : 
+                    .reduce((sum, record) => sum + (record.duration_ms || 0), 0) /
+                  syncHistory.filter(record => record.duration_ms).length
+                )}` :
                 ''}
             </CardFooter>
           </Card>
