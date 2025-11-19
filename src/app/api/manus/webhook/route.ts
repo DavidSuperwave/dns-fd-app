@@ -73,6 +73,9 @@ export async function POST(request: NextRequest) {
       console.log('[Manus Webhook] Failed to parse JSON body, treating as empty/verification');
     }
 
+    // LOG THE ENTIRE RAW PAYLOAD
+    console.log('[Manus Webhook] RAW PAYLOAD:', JSON.stringify(body, null, 2));
+
     const { task_id, status, result, error } = body;
 
     console.log('[Manus Webhook] Received webhook:', {
