@@ -1,7 +1,130 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
 import { deleteCampaign, PlusVibeClientCredentials } from '@/lib/plusvibe';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
+// Admin client for bypassing RLS
+const supabaseAdmin = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+        cookies: {
+            async get() { return null },
+            async set() { },
+            async remove() { },
+        },
+    }
+);
+
+export async function PATCH(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const { id: campaignId } = await params;
+        const body = await request.json();
+        const { name, description, status, sequence, icp_id } = body;
+
+        const supabase = await createServerSupabaseClient();
+
+        // Get authenticated user
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        // Verify ownership
+        const { data: existingCampaign, error: fetchError } = await supabase
+            .from('campaigns')
+            .select('user_id')
+            .eq('id', campaignId)
+            .single();
+
+        if (fetchError || !existingCampaign) {
+            return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
+        }
+
+        if (existingCampaign.user_id !== user.id) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+        }
+
+        // Update campaign metadata using admin client
+        const { data: campaign, error: campaignError } = await supabaseAdmin
+            .from('campaigns')
+            .update({
+                name,
+                description,
+                status,
+                icp_id,
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', campaignId)
+            .select()
+            .single();
+
+        if (campaignError) {
+            console.error('[API Campaigns PATCH] Error updating campaign:', campaignError);
+            return NextResponse.json(
+                { error: 'Failed to update campaign' },
+                { status: 500 }
+            );
+        }
+
+        // If sequence is provided, update email templates
+        if (sequence && Array.isArray(sequence)) {
+            // Delete existing templates
+            const { error: deleteError } = await supabaseAdmin
+                .from('email_templates')
+                .delete()
+                .eq('campaign_id', campaignId);
+
+            if (deleteError) {
+                console.error('[API Campaigns PATCH] Error deleting old templates:', deleteError);
+                return NextResponse.json(
+                    { error: 'Failed to update email templates' },
+                    { status: 500 }
+                );
+            }
+
+            // Create new templates
+            const templates = sequence.map((step: any, index: number) => ({
+                campaign_id: campaignId,
+                name: step.step_summary || `Step ${step.step_number}`,
+                subject: step.variations?.[0]?.subject || '',
+                body_text: step.variations?.[0]?.body || '',
+                sequence_position: index + 1,
+                variables: {
+                    wait_days: step.wait_days || 0,
+                    step_number: step.step_number,
+                },
+            }));
+
+            const { error: insertError } = await supabaseAdmin
+                .from('email_templates')
+                .insert(templates);
+
+            if (insertError) {
+                console.error('[API Campaigns PATCH] Error creating templates:', insertError);
+                return NextResponse.json(
+                    { error: 'Failed to create email templates' },
+                    { status: 500 }
+                );
+            }
+        }
+
+        return NextResponse.json({
+            success: true,
+            campaign,
+        });
+    } catch (error) {
+        console.error('[API Campaigns PATCH] Unexpected error:', error);
+        return NextResponse.json(
+            { error: 'Internal server error' },
+            { status: 500 }
+        );
+    }
+}
 export async function DELETE(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }

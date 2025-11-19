@@ -14,7 +14,7 @@ import { toast } from "sonner";
 
 // Import tab components
 import { PerformanceTab } from "@/components/campaigns/tabs/performance-tab-new";
-import { EmailCopyTab } from "@/components/campaigns/tabs/email-copy-tab";
+import { CampaignsTab } from "@/components/campaigns/tabs/campaigns-tab";
 import { UploadLeadsTab } from "@/components/campaigns/tabs/upload-leads-tab";
 import { RepliesTab } from "@/components/campaigns/tabs/replies-tab";
 import { DomainsTab } from "@/components/campaigns/tabs/domains-tab-new";
@@ -38,6 +38,7 @@ export default function CampaignPage() {
   const [showCustomSetup, setShowCustomSetup] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("performance");
 
   useEffect(() => {
     if (projectId) {
@@ -218,6 +219,7 @@ export default function CampaignPage() {
   const phase2Data = companyReport?.phase_data?.phase_2_icp_report ||
     companyReport?.phase_data?.phase_2_icp_creation ||
     companyReport?.phase_data?.phase_2;
+  const phase3Data = companyReport?.phase_data?.phase_3_campaigns;
 
   // 1. Show loading state if generating (Phase 1 only at page level)
   if (workflowStatus === 'generating' || workflowStatus === 'pending') {
@@ -380,7 +382,7 @@ export default function CampaignPage() {
         />
 
         {/* Tabs */}
-        <Tabs defaultValue="performance" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="performance">
               <BarChart3 className="h-4 w-4 mr-2" />
@@ -390,9 +392,9 @@ export default function CampaignPage() {
               <Users className="h-4 w-4 mr-2" />
               ICPs
             </TabsTrigger>
-            <TabsTrigger value="email-copy">
+            <TabsTrigger value="campaigns">
               <Mail className="h-4 w-4 mr-2" />
-              Email Copy
+              Campaigns
             </TabsTrigger>
             <TabsTrigger value="upload-leads">
               <Upload className="h-4 w-4 mr-2" />
@@ -418,11 +420,23 @@ export default function CampaignPage() {
               companyProfileId={companyProfileId}
               icpData={phase2Data}
               workflowStatus={workflowStatus}
+              onGenerate={() => {
+                fetchProject();
+              }}
+              onTabChange={setActiveTab}
             />
           </TabsContent>
 
-          <TabsContent value="email-copy" className="space-y-4">
-            <EmailCopyTab projectId={projectId} workspaceType={workspaceType!} />
+          <TabsContent value="campaigns" className="space-y-4">
+            <CampaignsTab
+              projectId={projectId}
+              companyProfileId={companyProfileId}
+              campaignData={phase3Data}
+              workflowStatus={workflowStatus}
+              onUpdate={() => {
+                fetchProject();
+              }}
+            />
           </TabsContent>
 
           <TabsContent value="upload-leads" className="space-y-4">
