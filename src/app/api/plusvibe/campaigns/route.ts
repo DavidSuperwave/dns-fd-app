@@ -13,8 +13,8 @@ const supabaseAdmin = createClient(
 
 const WORKSPACE_ID_REGEX = /^[a-f0-9]{24}$/i;
 
-function createSupabaseClient() {
-  const resolvedCookieStore = cookies();
+async function createSupabaseClient() {
+  const resolvedCookieStore = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
   let resolvedWorkspaceId: string | null = null;
 
   if (credentialId) {
-    const supabase = createSupabaseClient();
+    const supabase = await createSupabaseClient();
     const {
       data: { user },
       error: userError,
@@ -114,6 +114,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    console.log(`[PlusVibe Campaigns] Fetching campaigns. Workspace: ${credentialOverride?.workspaceId || process.env.PLUSVIBE_WORKSPACE_ID}, Limit: ${resolvedLimit}, Type: ${campaignType}`);
+
     const campaigns = await fetchCampaigns(
       {
         limit: resolvedLimit,

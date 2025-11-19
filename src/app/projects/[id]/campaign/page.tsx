@@ -7,9 +7,10 @@ import { WorkspaceSelection } from "@/components/campaigns/workspace-selection";
 import { CustomWorkspaceSetup } from "@/components/campaigns/custom-workspace-setup";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Loader2, Settings, BarChart3, Mail, Upload, MessageSquare, Globe } from "lucide-react";
+import { Loader2, Settings, BarChart3, Mail, Upload, MessageSquare, Globe, Users, Download, Plus, Bug } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+
 
 // Import tab components
 import { PerformanceTab } from "@/components/campaigns/tabs/performance-tab-new";
@@ -19,6 +20,9 @@ import { RepliesTab } from "@/components/campaigns/tabs/replies-tab";
 import { DomainsTab } from "@/components/campaigns/tabs/domains-tab-new";
 import { Phase1Approval } from "@/components/campaigns/phase-1-approval";
 import { CompanyLoadingStates } from "@/components/company/company-loading-states";
+import { ICPsTab } from "@/components/campaigns/tabs/icps-tab";
+import { CampaignImportDialog } from "@/components/plusvibe/campaign-import-dialog";
+import { CreateCampaignDialog } from "@/components/plusvibe/create-campaign-dialog";
 
 type WorkspaceType = "standard" | "custom" | null;
 
@@ -26,12 +30,14 @@ export default function CampaignPage() {
   const params = useParams();
   const router = useRouter();
   const projectId = params?.id as string;
-  const supabase = createClientComponentClient();
+
 
   const [loading, setLoading] = useState(true);
   const [project, setProject] = useState<any>(null);
   const [workspaceType, setWorkspaceType] = useState<WorkspaceType>(null);
   const [showCustomSetup, setShowCustomSetup] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
   useEffect(() => {
     if (projectId) {
@@ -87,35 +93,32 @@ export default function CampaignPage() {
     try {
       setLoading(true);
 
-      // Step 1: Fetch Project
-      const { data: projectData, error: projectError } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("id", projectId)
-        .single();
+      // Fetch project data from API (bypasses RLS issues)
+      const response = await fetch(`/api/projects/${projectId}`);
 
-      if (projectError) throw projectError;
+      if (!response.ok) {
+        throw new Error(`Failed to fetch project: ${response.statusText}`);
+      }
 
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      const projectData = data.project;
       console.log("Fetched project:", projectData);
 
-      let fullProject = { ...projectData, company_profiles: null };
+      // Normalize the data structure to match what the component expects
+      // The API returns project with companyProfile, but component might expect company_profiles
+      // or we can just update the component to use companyProfile
 
-      // Step 2: Fetch Company Profile if linked
-      if (projectData.company_profile_id) {
-        const { data: profileData, error: profileError } = await supabase
-          .from("company_profiles")
-          .select("*")
-          .eq("id", projectData.company_profile_id)
-          .single();
-
-        if (profileError) {
-          console.error("Error fetching linked profile (likely RLS):", profileError);
-          // Don't throw, just leave it null so we can show the error state
-        } else {
-          console.log("Fetched linked profile:", profileData);
-          fullProject.company_profiles = profileData;
-        }
-      }
+      // Map API response to component state
+      const fullProject = {
+        ...projectData,
+        // Ensure compatibility with existing code that might look for company_profiles
+        company_profiles: projectData.companyProfile || projectData.company_profiles
+      };
 
       setProject(fullProject);
       setWorkspaceType(fullProject.workspace_type || null);
@@ -212,6 +215,9 @@ export default function CampaignPage() {
   const companyProfileId = project.company_profiles?.id;
   const companyReport = project.company_profiles?.company_report;
   const phase1Data = companyReport?.phase_data?.phase_1_company_report;
+  const phase2Data = companyReport?.phase_data?.phase_2_icp_report ||
+    companyReport?.phase_data?.phase_2_icp_creation ||
+    companyReport?.phase_data?.phase_2;
 
   // 1. Show loading state if generating
   if (workflowStatus === 'generating' || workflowStatus === 'pending') {
@@ -301,18 +307,73 @@ export default function CampaignPage() {
               Manage campaigns, leads, and email outreach
             </p>
           </div>
-          <Button variant="outline" size="sm">
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
-          </Button>
+          <div className="flex items-center gap-2">
+            {project.company_profiles?.id && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => attemptManusDataFetch(project.company_profiles.id)}
+                title="Debug: Force fetch Manus results"
+              >
+                <Bug className="h-4 w-4 mr-2" />
+                Debug Fetch
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Settings
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Project Settings</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setIsCreateDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Campaign
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Import Campaign
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Connect Integration
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
+
+        <CampaignImportDialog
+          projectId={projectId}
+          open={isImportDialogOpen}
+          onOpenChange={setIsImportDialogOpen}
+          onSuccess={() => {
+            fetchProject();
+          }}
+        />
+
+        <CreateCampaignDialog
+          projectId={projectId}
+          open={isCreateDialogOpen}
+          onOpenChange={setIsCreateDialogOpen}
+          onSuccess={() => {
+            fetchProject();
+          }}
+        />
 
         {/* Tabs */}
         <Tabs defaultValue="performance" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="performance">
               <BarChart3 className="h-4 w-4 mr-2" />
               Performance
+            </TabsTrigger>
+            <TabsTrigger value="icps">
+              <Users className="h-4 w-4 mr-2" />
+              ICPs
             </TabsTrigger>
             <TabsTrigger value="email-copy">
               <Mail className="h-4 w-4 mr-2" />
@@ -334,6 +395,14 @@ export default function CampaignPage() {
 
           <TabsContent value="performance" className="space-y-4">
             <PerformanceTab projectId={projectId} workspaceType={workspaceType!} />
+          </TabsContent>
+
+          <TabsContent value="icps" className="space-y-4">
+            <ICPsTab
+              projectId={projectId}
+              companyProfileId={companyProfileId}
+              icpData={phase2Data}
+            />
           </TabsContent>
 
           <TabsContent value="email-copy" className="space-y-4">

@@ -7,13 +7,13 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/domains");
+    router.replace("/overview");
   }, [router]);
 
   return (
     <div className="flex items-center justify-center h-screen">
       <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
-      <span className="ml-3">Redirecting to domains...</span>
+      <span className="ml-3">Redirecting to overview...</span>
     </div>
   );
 }

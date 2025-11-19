@@ -31,8 +31,8 @@ export async function POST(
         get(name: string) {
           return resolvedCookieStore.get(name)?.value;
         },
-        set() {},
-        remove() {},
+        set() { },
+        remove() { },
       },
     }
   );
@@ -40,14 +40,14 @@ export async function POST(
   try {
     // Verify user is authenticated
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
+
     if (userError || !user) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
     const { id } = params;
     const body = await request.json();
-    const { phaseData } = body; // Data from previous phase
+    const { phaseData, additionalData } = body; // Data from previous phase and any extra params
 
     // Get company profile
     const { data: companyProfile, error: fetchError } = await supabaseAdmin
@@ -85,17 +85,19 @@ export async function POST(
 
     // Build prompt for next phase
     let nextPhasePrompt: string;
-    
+
     if (nextPhase === 'phase_2_icp_report') {
       // Phase 2 uses Phase 1 data
       nextPhasePrompt = nextPhaseConfig.promptBuilder({
         companyReport: phaseDataStore.phase_1_company_report,
+        ...additionalData
       });
     } else if (nextPhase === 'phase_3_campaigns') {
       // Phase 3 uses Phase 1 & 2 data
       nextPhasePrompt = nextPhaseConfig.promptBuilder({
         companyReport: phaseDataStore.phase_1_company_report,
         icpReport: phaseDataStore.phase_2_icp_report,
+        ...additionalData
       });
     } else if (nextPhase === 'phase_4_optimization') {
       // Phase 4 uses all previous data + campaign data from Vibe Plus
@@ -105,6 +107,7 @@ export async function POST(
         icpReport: phaseDataStore.phase_2_icp_report,
         campaigns: phaseDataStore.phase_3_campaigns,
         campaignData: {}, // Will be populated from Vibe Plus
+        ...additionalData
       });
     } else if (nextPhase === 'phase_5_final_optimization') {
       // Phase 5 uses all previous data
@@ -114,6 +117,7 @@ export async function POST(
         campaigns: phaseDataStore.phase_3_campaigns,
         campaignData: phaseDataStore.phase_4_optimization?.campaignData || {},
         optimizationResults: phaseDataStore.phase_4_optimization,
+        ...additionalData
       });
     } else {
       return NextResponse.json({ error: 'Invalid phase' }, { status: 400 });
@@ -125,7 +129,7 @@ export async function POST(
 
       // Update company profile with new phase
       phasesCompleted.push(currentPhase);
-      
+
       await supabaseAdmin
         .from('company_profiles')
         .update({

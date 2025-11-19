@@ -277,7 +277,7 @@ export async function fetchCampaigns(
       query.skip = Math.max(Number(skip) || 0, 0);
     }
 
-    if (campaignType && campaignType.length > 0) {
+    if (campaignType && campaignType.length > 0 && campaignType !== "all") {
       query.campaign_type = campaignType;
     }
 

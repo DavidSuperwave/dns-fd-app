@@ -86,6 +86,26 @@ export async function GET(request: NextRequest) {
           billing_plan_id: newPlan.id
         });
       }
+      // Default template not found - return empty/inactive state
+      console.warn('Default "Free Trial" billing plan template not found');
+      return NextResponse.json({
+        available_slots: 0,
+        total_slots: 0,
+        used_slots: 0,
+        plan_name: 'No Plan',
+        status: 'inactive'
+      });
+    }
+
+    if (!billingPlan) {
+      // Should be unreachable if logic above is correct, but for safety
+      return NextResponse.json({
+        available_slots: 0,
+        total_slots: 0,
+        used_slots: 0,
+        plan_name: 'No Plan',
+        status: 'inactive'
+      });
     }
 
     // Return current slot information

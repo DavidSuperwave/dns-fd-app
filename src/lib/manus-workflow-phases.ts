@@ -125,15 +125,15 @@ const PHASE_1_REPORT_JSON_SCHEMA = `{
   }
 }`;
 
-// Phase 2: Multi-ICP Report JSON Schema (sample showing structure)
+// Phase 2: Multi-ICP Report JSON Schema
 const PHASE_2_ICP_JSON_SCHEMA = `{
   "icp_reports": [
     {
       "icp_id": "icp_001",
-      "icp_name": "Example: Growth-Stage B2B SaaS Companies",
-      "icp_summary": "Summary description of this ICP segment...",
+      "icp_name": "Growth-Stage B2B SaaS Companies",
+      "icp_summary": "B2B SaaS companies with 50-500 employees that have established product-market fit and are now scaling their outbound sales operations. They are moving from founder-led sales to building a dedicated sales team and are highly sensitive to pipeline predictability and brand reputation.",
       "firmographics": {
-        "industries": ["Industry 1", "Industry 2"],
+        "industries": ["Computer Software", "Information Technology & Services", "Internet"],
         "company_size_employees": [50, 500],
         "annual_revenue_usd_millions": [5, 50],
         "geography": ["North America", "Western Europe"]
@@ -141,24 +141,52 @@ const PHASE_2_ICP_JSON_SCHEMA = `{
       "sub_niches": [
         {
           "sub_niche_id": "sub_001a",
-          "sub_niche_name": "Example Sub-Niche Name",
-          "sub_niche_summary": "More focused segment description...",
+          "sub_niche_name": "Sales & Marketing Tech SaaS",
+          "sub_niche_summary": "Companies building tools for sales and marketing teams (e.g., CRM, automation, analytics). They are sophisticated buyers who understand the value of a strong outbound engine and are often early adopters of new sales technologies.",
           "buyer_persona": {
             "primary_title": "VP of Sales",
             "secondary_titles": ["Head of Sales", "Director of Sales Development"],
-            "responsibilities": ["Responsibility 1", "Responsibility 2"],
-            "goals_kpis": ["Goal 1", "Goal 2"]
+            "responsibilities": [
+              "Hitting quarterly and annual revenue targets.",
+              "Scaling the sales team (hiring and training SDRs/AEs).",
+              "Building a predictable and scalable sales process.",
+              "Managing the sales tech stack and budget."
+            ],
+            "goals_kpis": [
+              "Increase number of qualified meetings booked per month.",
+              "Improve sales cycle velocity.",
+              "Reduce customer acquisition cost (CAC).",
+              "Increase sales team quota attainment."
+            ]
           },
-          "key_buying_signals": ["Signal 1", "Signal 2"],
-          "pain_points_and_challenges": ["Pain 1", "Pain 2"],
+          "key_buying_signals": [
+            "Recently hired a VP of Sales or Head of Sales Development.",
+            "Job postings for SDRs or AEs have increased in the last 3 months.",
+            "Recently raised a Series A or Series B funding round.",
+            "Publicly announced aggressive growth or expansion plans.",
+            "Active on LinkedIn, sharing content about sales strategy and growth."
+          ],
+          "pain_points_and_challenges": [
+            "Outbound campaigns are inconsistent; good one month, bad the next.",
+            "Fear of their main corporate domain getting blacklisted, which would halt all sales communication.",
+            "Struggling to manage email infrastructure as they add more sales reps.",
+            "Receiving high bounce rates and low reply rates, wasting SDR time."
+          ],
           "value_proposition_mapping": {
-            "guaranteed_performance_sla": "How SLA addresses their needs...",
-            "white_glove_guidance": "How guidance helps them...",
-            "executive_visibility_dashboard": "How dashboard provides value..."
+            "guaranteed_performance_sla": "De-risks their investment in outbound by guaranteeing inbox placement, ensuring their SDRs are actually reaching prospects.",
+            "white_glove_guidance": "Provides the strategic expertise they lack in-house, allowing them to focus on selling while we handle deliverability.",
+            "executive_visibility_dashboard": "Translates deliverability metrics into the revenue outcomes they care about (pipeline, meetings), justifying the investment to the C-suite."
           },
           "targeting_criteria_database": {
             "platform": "Apollo.io / Clay.com",
-            "filters": ["Filter 1", "Filter 2"]
+            "filters": [
+              "Industry: Computer Software",
+              "Employee Count: 51-500",
+              "Keywords: B2B, SaaS, Sales Enablement, Marketing Automation",
+              "Job Titles: VP of Sales, Head of Sales",
+              "Funding: Series A, Series B",
+              "Technologies Used: Salesforce, HubSpot, Outreach"
+            ]
           }
         }
       ]
@@ -182,29 +210,33 @@ function buildPhase1Prompt(data: {
 }): string {
   const { clientName, domain, industry, offerService, pricing, targetMarket, goals, fileNames = [] } = data;
 
-  return `**Task: Generate a Detailed Phase 1 Strategic Report from Client Intake Form**
+  // Construct a comprehensive offer description from available fields
+  const offerDescription = `${offerService}
+  
+  Additional Context:
+  - Industry: ${industry}
+  - Pricing: ${pricing}
+  - Target Market: ${targetMarket}
+  - Goals: ${goals}`;
+
+  return `**Task: Generate a Detailed, Dynamic Phase 1 Strategic Report**
 
 **Objective:**
-Analyze the detailed client information provided below to generate a comprehensive strategic report. Use the provided data, visit the company's domain for context, and perform external research to populate the standard three-part strategic report.
+Conduct a comprehensive market and strategic analysis for the company and offer detailed below. Use the provided information and perform external research to generate a detailed report in the specified JSON format.
 
-**Client Intake Form Data:**
+**Input Parameters:**
 
-* **Client Name:** ${clientName}
-* **Domain:** ${domain}
-* **Industry:** ${industry}
-* **Offer/Service:** ${offerService}
-* **Pricing:** ${pricing}
-* **Target Market:** ${targetMarket}
-* **Goals:** ${goals}
-${fileNames.length > 0 ? `* **Attached Files:** ${fileNames.join(', ')}` : ''}
+*   **Company Name:** ${clientName}
+*   **Company URL:** ${domain}
+*   **Offer Description:** ${offerDescription}
+${fileNames.length > 0 ? `*   **Attachments:** ${fileNames.join(', ')}` : ''}
 
 **Instructions:**
 
-1. **Analyze Inputs:** Thoroughly review all the fields from the client intake form. This is the primary source of truth.
-2. **Visit Domain:** Navigate to the provided domain (${domain}) to understand the company's live positioning, branding, and messaging.
-3. **Conduct Research:** Perform external research to validate the client's assumptions, analyze the competitive landscape for their specific industry and offer, and identify market trends.
-4. **Synthesize Findings:** Based on all available information (intake form, website analysis, external research), generate the content for the three core sections: Client & Offer Brief, Market & Competitive Analysis, and Core Value Proposition.
-5. **Structure the Output:** Populate the standard JSON output schema. The final output must be a single, valid JSON object.
+1.  **Analyze Inputs:** Review the provided company name, URL, and offer description. If any documents are attached, analyze them for deeper context.
+2.  **Conduct Research:** Visit the company URL and perform web searches to understand the company's positioning, target market, and competitive landscape.
+3.  **Synthesize Findings:** Based on your research, populate the three core sections of the strategic report: Client & Offer Brief, Market & Competitive Analysis, and Core Value Proposition.
+4.  **Structure the Output:** Populate the JSON object according to the precise schema provided below. The final output must be **only** the complete, valid JSON object.
 
 **CRITICAL OUTPUT REQUIREMENTS:**
 - You MUST return ONLY a valid JSON object
@@ -226,7 +258,7 @@ The report should be ready for immediate use in Phase 2 (ICP generation) and Pha
 }
 
 // Phase 3: Campaign Blueprints JSON Schema (sample showing structure)
-const PHASE_3_CAMPAIGN_JSON_SCHEMA = `{
+const PHASE_3_CAMPAIGN_JSON_SCHEMA = \`{
   "target_profile": {
     "icp_id": "icp_001",
     "icp_name": "ICP Name",
@@ -255,7 +287,7 @@ const PHASE_3_CAMPAIGN_JSON_SCHEMA = `{
       ]
     }
   ]
-}`;
+}\`;
 
 /**
  * Phase 2: ICP Report (uses Phase 1 Company Report)
@@ -265,49 +297,42 @@ function buildPhase2Prompt(data: {
   numberOfICPs?: number; // Optional: how many ICPs to generate
   icpCriteria?: string; // Optional: specific criteria for ICP selection
 }): string {
-  const numberOfICPs = data.numberOfICPs || 2;
-  const icpCriteria = data.icpCriteria || "Identify distinct customer segments that would most value a premium, SLA-backed revenue infrastructure.";
+  const numberOfICPs = data.numberOfICPs || 3;
+  const icpCriteria = data.icpCriteria || "Focus on B2B companies that are actively scaling their sales teams and are likely to invest in premium infrastructure.";
 
   return `** Task: Generate a Detailed Phase 2 Multi - ICP Report **
 
 ** Objective:**
-  Based on the strategic direction provided in the Phase 1 report, generate a detailed ICP report that identifies and profiles distinct customer segments for the "Superwave Revenue Infrastructure" offer.
+  Based on the strategic direction provided in the attached Phase 1 report(\`phase_1_report.json\`), generate a detailed ICP report that identifies and profiles distinct customer segments for the offer described in the report.
 
-** Context from Phase 1:**
+**Context from Phase 1:**
 
-  ${JSON.stringify(data.companyReport, null, 2)}
+${JSON.stringify(data.companyReport, null, 2)}
 
-** Instructions:**
+**Instructions:**
 
-  1. ** Analyze Phase 1 Report:** Ingest the Phase 1 report to understand the premium offer, target market, and core value propositions.
+1.  **Analyze Phase 1 Report:** Ingest the attached \`phase_1_report.json\` to understand the premium offer, target market, and core value propositions.
 
-2. ** Identify and Profile ICPs:**
-   - Generate ** ${numberOfICPs}** distinct Ideal Customer Profiles(ICPs) that are a perfect fit for the premium offer.
-   - For each ICP, follow the criteria: ** ${icpCriteria}**
+2.  **Identify and Profile ICPs:**
+    *   Generate **${numberOfICPs}** distinct Ideal Customer Profiles (ICPs) that are a perfect fit for the premium offer.
+    *   For each ICP, follow the criteria: **${icpCriteria}**
 
-  3. ** Identify and Profile Sub - Niches:**
-    - Within each ICP, identify at least two(2) specific, actionable sub - niches.
-   - A sub - niche should be a more focused segment of the main ICP(e.g., if the ICP is "Growth-Stage SaaS," a sub - niche could be "Sales Tech SaaS").
-- Each sub - niche must include detailed buyer persona, pain points, value proposition mapping, and targeting criteria.
+3.  **Identify and Profile Sub-Niches:**
+    *   Within each ICP, identify at least two (2) specific, actionable sub-niches.
+    *   A sub-niche should be a more focused segment of the main ICP (e.g., if the ICP is "Growth-Stage SaaS," a sub-niche could be "Sales Tech SaaS").
 
-4. ** Structure the Output:** Populate the JSON object according to the precise schema provided below.The root object must contain an \`icp_reports\` array, and each element in that array must be a complete ICP profile with its own nested \`sub_niches\` array.
+4.  **Structure the Output:** Populate the JSON object according to the precise schema provided below. The root object must contain an \`icp_reports\` array, and each element in that array must be a complete ICP profile with its own nested \`sub_niches\` array.
 
-5. **Final Output:** The final output of this task must be **only** the complete, valid JSON object. Do not include any other text, explanations, or markdown formatting outside of the JSON structure.
+5.  **Final Output:** The final output of this task must be **only** the complete, valid JSON object. Do not include any other text, explanations, or markdown formatting outside of the JSON structure.
 
 **JSON Output Schema:**
 
-${PHASE_2_ICP_JSON_SCHEMA}
-
-**CRITICAL OUTPUT REQUIREMENTS:**
-- You MUST return ONLY a valid JSON object matching the schema above
-- Do NOT wrap the JSON in markdown code blocks (\`\`\`json)
-- Do NOT include any explanatory text before or after the JSON
-- Generate exactly ${numberOfICPs} ICPs in the icp_reports array
-- Each ICP must have at least 2 sub-niches
-- The JSON must be parseable by JSON.parse()
-- Ensure all required fields are populated with detailed, specific information`;
+${PHASE_2_ICP_JSON_SCHEMA}`;
 }
 
+/**
+ * Phase 3: Campaign Creation (uses Phase 1 & 2 reports)
+ */
 /**
  * Phase 3: Campaign Creation (uses Phase 1 & 2 reports)
  */
@@ -317,32 +342,44 @@ function buildPhase3Prompt(data: {
   targetSubNicheId?: string; // Optional: specific sub-niche to target
   numberOfAngles?: number; // Optional: how many angles to generate
   angleCriteria?: string; // Optional: specific criteria for angles
+  selectedIcpIds?: string[]; // Optional: selected ICP IDs to focus on
 }): string {
   const targetSubNicheId = data.targetSubNicheId || 'sub_001a';
   const numberOfAngles = data.numberOfAngles || 3;
   const angleCriteria = data.angleCriteria || "Create distinct angles: one pain-focused, one gain-focused, and one risk-focused.";
 
-  return `**Task: Generate Detailed Phase 3 Campaign Blueprints**
+  // Filter ICP report if selection is provided
+  let icpContext = data.icpReport;
+  if (data.selectedIcpIds && data.selectedIcpIds.length > 0 && data.icpReport?.icp_reports) {
+    const filteredReports = data.icpReport.icp_reports.filter((icp: any) =>
+      data.selectedIcpIds?.includes(icp.icp_id)
+    );
+    if (filteredReports.length > 0) {
+      icpContext = { ...data.icpReport, icp_reports: filteredReports };
+    }
+  }
 
-**Objective:**
-Based on the specific sub-niche profile provided in the Phase 2 ICP report, generate multiple, complete email campaign blueprints. Each blueprint should be based on a unique strategic angle.
+  return `** Task: Generate Detailed Phase 3 Campaign Blueprints **
 
-**Context from Phase 1:**
+** Objective:**
+    Based on the specific sub - niche profile provided in the Phase 2 ICP report, generate multiple, complete email campaign blueprints.Each blueprint should be based on a unique strategic angle.
 
-${JSON.stringify(data.companyReport, null, 2)}
+** Context from Phase 1:**
 
-**Context from Phase 2:**
+    ${JSON.stringify(data.companyReport, null, 2)}
 
-${JSON.stringify(data.icpReport, null, 2)}
+    ** Context from Phase 2(Selected ICPs):**
 
-**Instructions:**
+    ${JSON.stringify(icpContext, null, 2)}
 
-1. **Analyze Target Profile:** Focus exclusively on the sub-niche with the ID **${targetSubNicheId}**. Use its buyer persona, pain points, and value proposition mappings as the source material for all copy.
+    ** Instructions:**
 
-2. **Generate Campaign Angles:**
-   - Generate **${numberOfAngles}** distinct strategic angles for the email campaigns.
-   - For each angle, follow the criteria: **${angleCriteria}**
-   - For each angle, write a clear \`angle_summary\` explaining the psychological approach.
+    1. ** Analyze Target Profile:** Focus on the selected ICPs and their sub - niches.Use their buyer persona, pain points, and value proposition mappings as the source material for all copy.
+
+2. ** Generate Campaign Angles:**
+   - Generate ** ${numberOfAngles}** distinct strategic angles for the email campaigns for EACH selected sub - niche.
+   - For each angle, follow the criteria: ** ${angleCriteria}**
+    - For each angle, write a clear \`angle_summary\` explaining the psychological approach.
 
 3. **Create Email Sequences:**
    - For each angle, create a 3-step email sequence (\`step_number\` 1, 2, and 3).
@@ -361,7 +398,7 @@ ${PHASE_3_CAMPAIGN_JSON_SCHEMA}
 - You MUST return ONLY a valid JSON object matching the schema above
 - Do NOT wrap the JSON in markdown code blocks (\`\`\`json)
 - Do NOT include any explanatory text before or after the JSON
-- Generate exactly ${numberOfAngles} campaign blueprints in the campaign_blueprints array
+- Generate exactly ${numberOfAngles} campaign blueprints in the campaign_blueprints array per sub-niche
 - Each blueprint must have a 3-step sequence with complete email copy
 - The JSON must be parseable by JSON.parse()
 - Subject lines and email bodies must be COMPLETE and READY TO USE

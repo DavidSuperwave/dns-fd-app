@@ -8,17 +8,19 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Download, Loader2, CheckCircle } from 'lucide-react';
+import { Download, Loader2, CheckCircle, Plus, ArrowLeft } from 'lucide-react';
 
 interface Connection {
     id: string;
     connection_name: string;
     workspace_id: string;
     api_key: string;
+    is_default?: boolean;
 }
 
 interface PlusVibeCampaign {
@@ -40,8 +42,9 @@ interface ImportDialogProps {
 }
 
 export function CampaignImportDialog({ projectId, open, onOpenChange, onSuccess }: ImportDialogProps) {
-    const [step, setStep] = useState<'select_connection' | 'select_campaign' | 'configure' | 'importing'>('select_connection');
+    const [step, setStep] = useState<'select_connection' | 'add_connection' | 'select_campaign' | 'configure' | 'importing'>('select_connection');
     const [connections, setConnections] = useState<Connection[]>([]);
+    const [newConnection, setNewConnection] = useState({ workspace_id: '', api_key: '', connection_name: '' });
     const [campaigns, setCampaigns] = useState<PlusVibeCampaign[]>([]);
     const [selectedConnectionId, setSelectedConnectionId] = useState('');
     const [selectedCampaignId, setSelectedCampaignId] = useState('');
@@ -72,6 +75,7 @@ export function CampaignImportDialog({ projectId, open, onOpenChange, onSuccess 
         setSelectedConnectionId('');
         setSelectedCampaignId('');
         setImportResult(null);
+        setNewConnection({ workspace_id: '', api_key: '', connection_name: '' });
     }
 
     async function loadConnections() {
@@ -94,13 +98,46 @@ export function CampaignImportDialog({ projectId, open, onOpenChange, onSuccess 
     async function loadCampaigns() {
         setLoading(true);
         try {
-            const response = await fetch(`/api/plusvibe/campaigns?connection_id=${selectedConnectionId}`);
+            const response = await fetch(`/api/plusvibe/campaigns?credentialId=${selectedConnectionId}`);
             const data = await response.json();
             setCampaigns(data.campaigns || []);
             setStep('select_campaign');
         } catch (error) {
             toast.error('Failed to load campaigns from PlusVibe');
             console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function handleAddConnection() {
+        if (!newConnection.workspace_id || !newConnection.api_key) {
+            toast.error('Workspace ID and API Key are required');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const response = await fetch('/api/plusvibe/connections', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newConnection),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to add connection');
+            }
+
+            const data = await response.json();
+            toast.success('Connection added successfully');
+
+            // Refresh connections and select the new one
+            await loadConnections();
+            setSelectedConnectionId(data.connection.id);
+            setStep('select_connection');
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to add connection');
         } finally {
             setLoading(false);
         }
@@ -154,7 +191,9 @@ export function CampaignImportDialog({ projectId, open, onOpenChange, onSuccess 
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-2xl">
                 <DialogHeader>
-                    <DialogTitle>Import Campaign from PlusVibe</DialogTitle>
+                    <DialogTitle>
+                        {step === 'add_connection' ? 'Add PlusVibe Connection' : 'Import Campaign from PlusVibe'}
+                    </DialogTitle>
                 </DialogHeader>
 
                 <div className="space-y-6">
@@ -183,16 +222,69 @@ export function CampaignImportDialog({ projectId, open, onOpenChange, onSuccess 
                                 </p>
                             )}
 
-                            <div className="flex justify-end gap-2">
-                                <Button variant="outline" onClick={() => onOpenChange(false)}>
-                                    Cancel
+                            <div className="flex justify-between items-center pt-4 border-t">
+                                <Button variant="ghost" size="sm" onClick={() => setStep('add_connection')} className="text-primary">
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Add New Connection
                                 </Button>
-                                <Button
-                                    onClick={() => loadCampaigns()}
-                                    disabled={!selectedConnectionId || loading}
-                                >
+                                <div className="flex gap-2">
+                                    <Button variant="outline" onClick={() => onOpenChange(false)}>
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        onClick={() => loadCampaigns()}
+                                        disabled={!selectedConnectionId || loading}
+                                    >
+                                        {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                                        Next
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Step 1.5: Add Connection */}
+                    {step === 'add_connection' && (
+                        <div className="space-y-4">
+                            <div className="space-y-3">
+                                <div className="space-y-2">
+                                    <Label>Connection Name (Optional)</Label>
+                                    <Input
+                                        placeholder="My VibePlus Workspace"
+                                        value={newConnection.connection_name}
+                                        onChange={(e) => setNewConnection({ ...newConnection, connection_name: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Workspace ID <span className="text-red-500">*</span></Label>
+                                    <Input
+                                        placeholder="ws_..."
+                                        value={newConnection.workspace_id}
+                                        onChange={(e) => setNewConnection({ ...newConnection, workspace_id: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>API Key <span className="text-red-500">*</span></Label>
+                                    <Input
+                                        type="password"
+                                        placeholder="sk_..."
+                                        value={newConnection.api_key}
+                                        onChange={(e) => setNewConnection({ ...newConnection, api_key: e.target.value })}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Find these in your PlusVibe Settings / API Keys
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-between gap-2 pt-4">
+                                <Button variant="outline" onClick={() => setStep('select_connection')}>
+                                    <ArrowLeft className="h-4 w-4 mr-2" />
+                                    Back
+                                </Button>
+                                <Button onClick={handleAddConnection} disabled={loading}>
                                     {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                                    Next
+                                    Save Connection
                                 </Button>
                             </div>
                         </div>
@@ -214,8 +306,8 @@ export function CampaignImportDialog({ projectId, open, onOpenChange, onSuccess 
                                                 key={campaign.id}
                                                 onClick={() => setSelectedCampaignId(campaign.id)}
                                                 className={`p-4 border rounded-lg cursor-pointer transition-colors ${selectedCampaignId === campaign.id
-                                                        ? 'border-primary bg-primary/5'
-                                                        : 'hover:border-primary/50'
+                                                    ? 'border-primary bg-primary/5'
+                                                    : 'hover:border-primary/50'
                                                     }`}
                                             >
                                                 <div className="flex items-start justify-between">
