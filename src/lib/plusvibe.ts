@@ -691,6 +691,20 @@ export async function pauseCampaign(
   });
 }
 
+/**
+ * Delete a campaign in PlusVibe
+ */
+export async function deleteCampaign(
+  campaignId: string,
+  credentials?: PlusVibeClientCredentials
+): Promise<void> {
+  await plusVibeRequest("/campaign/delete", {
+    method: "DELETE",
+    body: { campaign_id: campaignId },
+    credentials,
+  });
+}
+
 // ============================================================================
 // Lead Management Functions
 // ============================================================================

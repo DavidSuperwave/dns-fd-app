@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Search, Mail, Eye, MessageSquare, MousePointerClick, ExternalLink, TrendingUp, Users, Globe } from "lucide-react";
+import { MoreHorizontal, Search, Mail, Eye, MessageSquare, MousePointerClick, ExternalLink, TrendingUp, Users, Globe, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface EmailCampaignsTableProps {
@@ -155,6 +155,27 @@ export function EmailCampaignsTable({ campaigns, onRefresh }: EmailCampaignsTabl
                                         </Button>
                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50">
                                             <TrendingUp className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                            onClick={async () => {
+                                                if (window.confirm("Are you sure you want to delete this campaign? This action cannot be undone.")) {
+                                                    try {
+                                                        const res = await fetch(`/api/campaigns/${campaign.id}`, {
+                                                            method: 'DELETE',
+                                                        });
+                                                        if (!res.ok) throw new Error('Failed to delete');
+                                                        onRefresh();
+                                                    } catch (error) {
+                                                        console.error("Failed to delete campaign:", error);
+                                                        alert("Failed to delete campaign");
+                                                    }
+                                                }
+                                            }}
+                                        >
+                                            <Trash2 className="h-4 w-4" />
                                         </Button>
                                     </div>
                                 </TableCell>
