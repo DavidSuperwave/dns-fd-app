@@ -49,7 +49,8 @@ async function assertAdmin() {
   return { status: 200, user };
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const authResult = await assertAdmin();
   if (authResult.status !== 200) {
     return NextResponse.json(authResult.body, { status: authResult.status });
@@ -60,7 +61,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json({ error: 'Supabase admin client not configured' }, { status: 500 });
   }
 
-  const inboxingDomainId = Number(params.id);
+  const inboxingDomainId = Number(id);
   if (!inboxingDomainId || Number.isNaN(inboxingDomainId)) {
     return NextResponse.json({ error: 'Invalid Inboxing domain id' }, { status: 400 });
   }

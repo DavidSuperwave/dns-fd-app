@@ -7,10 +7,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
 import { fetchCampaigns } from '@/lib/plusvibe';
 
-export async function GET(
+export async function POST(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
+    const { id } = await params;
     try {
         const supabase = await createServerSupabaseClient();
 
@@ -20,7 +21,7 @@ export async function GET(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const connectionId = params.id;
+        const connectionId = id;
 
         // Get connection details
         const { data: connection, error: connError } = await supabase

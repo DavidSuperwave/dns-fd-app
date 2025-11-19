@@ -11,8 +11,9 @@ import { activateCampaign } from '@/lib/plusvibe';
 
 export async function POST(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
+    const { id } = await params;
     try {
         const supabase = createRouteHandlerClient({ cookies });
 
@@ -22,7 +23,7 @@ export async function POST(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const campaignId = params.id;
+        const campaignId = id;
 
         // Parse request body
         const body = await request.json();
