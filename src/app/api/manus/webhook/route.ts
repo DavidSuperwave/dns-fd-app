@@ -288,6 +288,20 @@ export async function POST(request: NextRequest) {
           };
 
           console.log('[Manus Webhook] Phase 2 completed - NOT auto-advancing to Phase 3 (temporarily disabled)');
+        } else if (currentPhase === 'phase_3_campaigns') {
+          // TEMPORARILY DISABLED: Phase 3 does NOT auto-advance to Phase 4
+          // Store the result and wait for manual trigger or decision
+          workflowStatus = 'campaigns_ready'; // New status: Campaigns generated
+          updateData = {
+            workflow_status: workflowStatus,
+            company_report: {
+              current_phase: currentPhase,
+              phases_completed: phasesCompleted,
+              phase_data: phaseDataStore,
+            },
+          };
+
+          console.log('[Manus Webhook] Phase 3 completed - NOT auto-advancing to Phase 4 (temporarily disabled)');
         } else if (nextPhase && nextPhase !== 'completed') {
           // Auto-advance for phases 3-5 (when Phase 3 is re-enabled)
           const nextPhaseConfig = WORKFLOW_PHASES[nextPhase];

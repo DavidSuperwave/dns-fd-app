@@ -244,28 +244,15 @@ export const WORKFLOW_PHASES: Record<WorkflowPhase, WorkflowPhaseConfig> = {
   phase_3_campaigns: {
     phase: 'phase_3_campaigns',
     name: 'Campaign Creation',
-    description: 'Creating targeted campaigns based on company and ICP reports',
+    description: 'Generate campaign blueprints and email sequences for target ICPs',
     promptBuilder: buildPhase3Prompt,
-    nextPhase: 'phase_4_optimization',
+    nextPhase: 'completed', // Changed from phase_4_optimization to completed
   },
-  phase_4_optimization: {
-    phase: 'phase_4_optimization',
-    name: 'Campaign Optimization',
-    description: 'Optimizing campaigns based on performance data',
-    promptBuilder: buildPhase4Prompt,
-    nextPhase: 'phase_5_final_optimization',
-  },
-  phase_5_final_optimization: {
-    phase: 'phase_5_final_optimization',
-    name: 'Final Optimization',
-    description: 'Final strategic recommendations and workflow completion',
-    promptBuilder: buildPhase5Prompt,
-    nextPhase: 'completed',
-  },
+  // Phase 4 and 5 removed - workflow ends at Phase 3
   completed: {
     phase: 'completed',
     name: 'Completed',
-    description: 'Workflow completed',
+    description: 'All phases completed',
     promptBuilder: () => '',
     nextPhase: null,
   },
@@ -275,14 +262,16 @@ export const WORKFLOW_PHASES: Record<WorkflowPhase, WorkflowPhaseConfig> = {
  * Map workflow phases to database workflow_status values
  */
 export function mapPhaseToWorkflowStatus(phase: WorkflowPhase): string {
-  const mapping: Record<WorkflowPhase, string> = {
-    phase_1_company_report: 'generating',
-    phase_2_icp_report: 'creating_report',
-    phase_3_campaigns: 'validating_report',
-    phase_4_optimization: 'finding_competitors',
-    phase_5_final_optimization: 'finding_competitors', // Reuse status
-    completed: 'completed',
-  };
-  return mapping[phase] || 'pending';
+  switch (phase) {
+    case 'phase_1_company_report':
+      return 'reviewing'; // Phase 1 complete, pending approval
+    case 'phase_2_icp_report':
+      return 'creating_report'; // Generating ICPs
+    case 'phase_3_campaigns':
+      return 'validating_report'; // Generating campaigns
+    case 'completed':
+      return 'completed';
+    default:
+      return 'generating';
+  }
 }
-
