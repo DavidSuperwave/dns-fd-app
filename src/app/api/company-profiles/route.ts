@@ -239,26 +239,8 @@ export async function POST(request: NextRequest) {
       // User can retry or we can add a retry mechanism later
     }
 
-    // 7. Create Project linked to Company Profile
-    const { data: project, error: projectError } = await supabaseAdmin
-      .from('projects')
-      .insert({
-        user_id: user.id,
-        name: clientName,
-        status: 'active',
-        company_profile_id: companyProfile.id,
-        workspace_type: null, // Will be set later in the flow
-      })
-      .select()
-      .single();
-
-    if (projectError || !project) {
-      console.error('[API Company Profiles] Error creating project:', projectError);
-      // We should probably rollback or alert, but for now we'll return the profile and warn
-      // Ideally we would delete the company profile here to maintain consistency
-    }
-
-    // 8. Return success response
+    // 7. Return success response
+    // Note: Project is automatically created by database trigger (see create-company-profiles-and-projects.sql)
     return NextResponse.json({
       success: true,
       companyProfile: {
@@ -269,7 +251,6 @@ export async function POST(request: NextRequest) {
         manus_task_url: manusTaskUrl,
         created_at: companyProfile.created_at,
       },
-      project: project, // Return the created project
       files: uploadedFiles,
       manusTask: manusTaskId ? {
         task_id: manusTaskId,
