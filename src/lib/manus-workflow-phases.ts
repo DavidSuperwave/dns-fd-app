@@ -19,8 +19,6 @@ export type WorkflowPhase =
   | 'phase_1_company_report'
   | 'phase_2_icp_report'
   | 'phase_3_campaigns'
-  | 'phase_4_optimization'
-  | 'phase_5_final_optimization'
   | 'completed';
 
 export interface WorkflowPhaseConfig {
