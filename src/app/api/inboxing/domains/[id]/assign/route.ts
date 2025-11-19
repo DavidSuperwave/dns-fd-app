@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { getSupabaseAdminClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase-client';
 
 async function assertAdmin() {
   const cookieStore = await cookies();
@@ -56,7 +56,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json(authResult.body, { status: authResult.status });
   }
 
-  const supabase = getSupabaseAdminClient();
+  const supabase = supabaseAdmin;
   if (!supabase) {
     return NextResponse.json({ error: 'Supabase admin client not configured' }, { status: 500 });
   }

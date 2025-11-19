@@ -32,15 +32,15 @@ export async function GET(
         get(name: string) {
           return resolvedCookieStore.get(name)?.value;
         },
-        set() {},
-        remove() {},
+        set() { },
+        remove() { },
       },
     }
   );
 
   try {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
+
     if (userError || !user) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
@@ -126,8 +126,8 @@ export async function GET(
             reason: taskStatus.status !== 'completed'
               ? `Task status is '${taskStatus.status}', waiting for completion`
               : !targetPhase
-              ? 'Unable to determine target phase'
-              : undefined,
+                ? 'Unable to determine target phase'
+                : undefined,
             forced: forceImport,
           };
         }
@@ -237,7 +237,7 @@ async function importPhaseResult(
       ...existingPhaseData,
       [targetPhase]: normalizedResult,
     },
-    phases_completed,
+    phases_completed: phasesCompleted,
   };
 
   const { data: updatedProfile, error: updateError } = await supabaseAdmin

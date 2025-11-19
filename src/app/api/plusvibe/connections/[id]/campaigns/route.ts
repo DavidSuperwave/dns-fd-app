@@ -36,10 +36,13 @@ export async function POST(
         }
 
         // Fetch campaigns from PlusVibe
-        const campaigns = await fetchCampaigns({
-            workspaceId: connection.workspace_id,
-            apiKey: connection.api_key,
-        });
+        const campaigns = await fetchCampaigns(
+            {},
+            {
+                workspaceId: connection.workspace_id,
+                apiKey: connection.api_key,
+            }
+        );
 
         return NextResponse.json({ campaigns });
 

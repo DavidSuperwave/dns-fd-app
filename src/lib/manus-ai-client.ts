@@ -27,6 +27,9 @@ interface ManusTaskStatus {
   task_id: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
   result?: any;
+  output?: any; // Alternative result field
+  data?: any;   // Alternative result field
+  content?: any; // Alternative result field
   error?: string;
 }
 
@@ -115,7 +118,7 @@ export async function createManusTask(
     // Add attachments if files were uploaded (only for new tasks, not continuations)
     // Filter out any empty or invalid file_ids
     const validFileIds = fileIds.filter(id => id && typeof id === 'string' && id.trim().length > 0);
-    
+
     if (validFileIds.length > 0 && !options.taskId) {
       // Format: array of objects with file_id property
       requestBody.attachments = validFileIds.map(file_id => ({ file_id }));

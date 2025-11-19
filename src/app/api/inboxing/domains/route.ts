@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseAdminClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase-client';
 
 const MAX_PAGE_SIZE = 200;
 
 export async function GET(request: NextRequest) {
-  const supabase = getSupabaseAdminClient();
+  const supabase = supabaseAdmin;
 
   if (!supabase) {
     return NextResponse.json({ error: 'Supabase admin client not configured' }, { status: 500 });
@@ -78,9 +78,9 @@ export async function GET(request: NextRequest) {
       last_sync_status: lastSync?.status ?? null,
       last_sync_counts: lastSync
         ? {
-            upserted: lastSync.upserted_domains ?? 0,
-            disabled: lastSync.disabled_domains ?? 0,
-          }
+          upserted: lastSync.upserted_domains ?? 0,
+          disabled: lastSync.disabled_domains ?? 0,
+        }
         : null,
     });
   } catch (error) {

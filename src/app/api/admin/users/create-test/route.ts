@@ -8,8 +8,8 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-function createSupabaseClient() {
-  const resolvedCookieStore = cookies();
+async function createSupabaseClient() {
+  const resolvedCookieStore = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -47,7 +47,7 @@ function generateTempPassword() {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = createSupabaseClient();
+  const supabase = await createSupabaseClient();
 
   const {
     data: { user },

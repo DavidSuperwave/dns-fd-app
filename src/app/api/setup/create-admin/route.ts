@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseAdminClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase-client';
 
 export async function POST(request: NextRequest) {
   try {
-    const supabaseAdmin = getSupabaseAdminClient();
-    
+    const supabaseAdminClient = supabaseAdmin;
+
     if (!supabaseAdmin) {
       return NextResponse.json(
         { error: 'Admin client not available. Check SUPABASE_SERVICE_ROLE_KEY.' },
@@ -30,12 +30,12 @@ export async function POST(request: NextRequest) {
 
     if (createError) {
       // Check if user already exists
-      if (createError.message.toLowerCase().includes('already registered') || 
-          createError.message.toLowerCase().includes('already exists')) {
+      if (createError.message.toLowerCase().includes('already registered') ||
+        createError.message.toLowerCase().includes('already exists')) {
         // Try to get the existing user
         const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers();
         const user = existingUser?.users?.find(u => u.email === email);
-        
+
         if (user) {
           // User exists, check if profile exists
           const { data: existingProfile } = await supabaseAdmin

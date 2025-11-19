@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { continueManusTask } from '@/lib/manus-ai-client';
+import { continueManusTask, getManusTaskStatus } from '@/lib/manus-ai-client';
 import { WORKFLOW_PHASES, mapPhaseToWorkflowStatus, type WorkflowPhase } from '@/lib/manus-workflow-phases';
 import { hasManusReportShape, parseManusReportPayload } from '@/lib/manus-result-parser';
 
@@ -53,6 +53,7 @@ function findBestAssistantMessage(messages: any[]): any {
   );
 }
 
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 const supabaseAdmin = createClient(
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
       status,
       hasResult: !!result,
       resultType: typeof result,
-      resultPreview: typeof result === 'string' ? result.substring(0, 200) : result,
+      resultPreview: typeof result === 'string' ? result.substring(0, 200) : (result ? 'Object/Array' : 'null'),
       error,
     });
 
@@ -108,34 +109,39 @@ export async function POST(request: NextRequest) {
         resultType: typeof result,
         resultIsNull: result === null,
         resultIsUndefined: result === undefined,
-        fullResult: result,
-        fullBody: body, // Log entire body to see all fields
       });
 
       // Phase completed - store result
       // If result is missing, try to fetch it from Manus API
       let finalResult = result;
-      if (result === null || result === undefined || (typeof result === 'string' && result.trim() === '')) {
+
+      // Check if result is empty or just a string "completed" which sometimes happens
+      const isResultEmpty = result === null || result === undefined || (typeof result === 'string' && result.trim() === '');
+
+      if (isResultEmpty) {
         console.warn('[Manus Webhook] Result is missing from webhook payload. Attempting to fetch from Manus API...');
 
         try {
-          const { getManusTaskStatus } = await import('@/lib/manus-ai-client');
           const taskStatus = await getManusTaskStatus(task_id);
 
           if (taskStatus.status === 'completed' && taskStatus.result) {
             console.log('[Manus Webhook] Successfully fetched result from Manus API');
             finalResult = taskStatus.result;
           } else {
-            console.error('[Manus Webhook] Could not fetch result from Manus API:', {
-              status: taskStatus.status,
-              hasResult: !!taskStatus.result,
-            });
-            // Don't return error - just log it and continue without result
-            // The status endpoint can poll for it later
+            // Try alternative fields
+            const altResult = (taskStatus as any).output || (taskStatus as any).data || (taskStatus as any).content;
+            if (altResult) {
+              console.log('[Manus Webhook] Found result in alternative field from API');
+              finalResult = altResult;
+            } else {
+              console.error('[Manus Webhook] Could not fetch result from Manus API:', {
+                status: taskStatus.status,
+                hasResult: !!taskStatus.result,
+              });
+            }
           }
         } catch (fetchError) {
           console.error('[Manus Webhook] Error fetching result from Manus API:', fetchError);
-          // Continue without result - status endpoint can poll for it
         }
       }
 
@@ -192,15 +198,19 @@ export async function POST(request: NextRequest) {
         // Store the result in phase_data (only if it's not a user message)
         if (normalizedResult && (!isUserMessage)) {
           phaseDataStore[currentPhase] = normalizedResult;
+
+          // Add to phases_completed if not already there
+          if (!phasesCompleted.includes(currentPhase)) {
+            phasesCompleted.push(currentPhase);
+          }
         } else if (isUserMessage) {
           console.warn('[Manus Webhook] Result is a user message (input prompt), skipping storage. Will rely on manual fetch.');
         }
-        phasesCompleted.push(currentPhase);
 
         console.log('[Manus Webhook] Updated phaseDataStore:', {
           phasesCompleted,
           phaseDataKeys: Object.keys(phaseDataStore),
-          phaseDataStore: JSON.stringify(phaseDataStore).substring(0, 500),
+          phaseDataStoreSize: JSON.stringify(phaseDataStore).length,
         });
 
         const currentPhaseConfig = WORKFLOW_PHASES[currentPhase];
@@ -221,7 +231,7 @@ export async function POST(request: NextRequest) {
 
           console.log('[Manus Webhook] Phase 1 completed - updateData:', {
             workflow_status: workflowStatus,
-            company_report: JSON.stringify(updateData.company_report).substring(0, 500),
+            company_report_keys: Object.keys(updateData.company_report || {}),
           });
         } else if (nextPhase && nextPhase !== 'completed') {
           // Auto-advance for phases 2-5
@@ -261,6 +271,7 @@ export async function POST(request: NextRequest) {
 
           // Continue the same task with next phase
           try {
+            console.log(`[Manus Webhook] Auto-advancing to ${nextPhase}`);
             await continueManusTask(task_id, nextPhasePrompt);
           } catch (continueError) {
             console.error('[Manus Webhook] Error continuing to next phase:', continueError);
@@ -319,7 +330,7 @@ export async function POST(request: NextRequest) {
       id: updatedProfile?.id,
       workflow_status: updatedProfile?.workflow_status,
       hasCompanyReport: !!updatedProfile?.company_report,
-      phaseData: updatedProfile?.company_report?.phase_data,
+      phaseDataKeys: Object.keys(updatedProfile?.company_report?.phase_data || {}),
     });
 
 

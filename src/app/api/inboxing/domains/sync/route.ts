@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { fetchAllInboxingDomains } from '@/lib/inboxing-api';
-import { getSupabaseAdminClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase-client';
 
 const CHUNK_SIZE = 500;
 
@@ -52,7 +52,7 @@ async function assertAdmin(request: NextRequest) {
     return { status: 401, body: { error: 'Not authenticated' } as const };
   }
 
-  const adminClient = getSupabaseAdminClient();
+  const adminClient = supabaseAdmin;
   let isAdmin =
     user.user_metadata?.role === 'admin' ||
     user.app_metadata?.role === 'admin' ||
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
   }
 
   const adminUser = authResult.user!;
-  const supabase = getSupabaseAdminClient();
+  const supabase = supabaseAdmin;
 
   if (!supabase) {
     return NextResponse.json({ error: 'Supabase admin client not configured' }, { status: 500 });
