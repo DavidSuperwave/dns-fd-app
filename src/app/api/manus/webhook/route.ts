@@ -1,0 +1,336 @@
+/**
+ * Manus AI Webhook Handler
+ * Receives status updates from Manus AI when tasks complete
+ */
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { continueManusTask } from '@/lib/manus-ai-client';
+import { WORKFLOW_PHASES, mapPhaseToWorkflowStatus, type WorkflowPhase } from '@/lib/manus-workflow-phases';
+import { hasManusReportShape, parseManusReportPayload } from '@/lib/manus-result-parser';
+
+const ASSISTANT_ROLES = new Set(['assistant', 'model', 'ai']);
+
+function findBestAssistantMessage(messages: any[]): any {
+  if (!Array.isArray(messages)) return messages;
+
+  const assistantMessages = messages.filter(
+    (msg: any) => msg && typeof msg === 'object' && ASSISTANT_ROLES.has(msg.role)
+  );
+
+  if (assistantMessages.length === 0) {
+    return messages[messages.length - 1];
+  }
+
+  const hasOutputFile = (msg: any) =>
+    Array.isArray(msg.content) &&
+    msg.content.some(
+      (item: any) =>
+        item &&
+        item.type === 'output_file' &&
+        (item.fileUrl || item.file_url || item.url)
+    );
+
+  const hasReportObject = (msg: any) =>
+    Array.isArray(msg.content) &&
+    msg.content.some(
+      (item: any) => item && typeof item === 'object' && hasManusReportShape(item)
+    );
+
+  const hasJsonText = (msg: any) =>
+    Array.isArray(msg.content) &&
+    msg.content.some(
+      (item: any) =>
+        typeof item?.text === 'string' &&
+        item.text.includes('{') &&
+        item.text.includes('company')
+    );
+
+  return (
+    assistantMessages.find(hasOutputFile) ||
+    assistantMessages.find(hasReportObject) ||
+    assistantMessages.find(hasJsonText) ||
+    assistantMessages[assistantMessages.length - 1]
+  );
+}
+
+export const dynamic = 'force-dynamic';
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { task_id, status, result, error } = body;
+
+    console.log('[Manus Webhook] Received webhook:', {
+      task_id,
+      status,
+      hasResult: !!result,
+      resultType: typeof result,
+      resultPreview: typeof result === 'string' ? result.substring(0, 200) : result,
+      error,
+    });
+
+    if (!task_id) {
+      console.error('[Manus Webhook] Missing task_id in webhook payload');
+      return NextResponse.json({ error: 'Missing task_id' }, { status: 400 });
+    }
+
+    // Find company profile with this manus_workflow_id
+    const { data: companyProfile, error: fetchError } = await supabaseAdmin
+      .from('company_profiles')
+      .select('id, workflow_status, manus_workflow_id, company_report')
+      .eq('manus_workflow_id', task_id)
+      .single();
+
+    if (fetchError || !companyProfile) {
+      console.error('[Manus Webhook] Company profile not found for task_id:', task_id);
+      return NextResponse.json({ error: 'Company profile not found' }, { status: 404 });
+    }
+
+    // Get current phase from company_report metadata
+    const reportData = companyProfile.company_report || {};
+    const currentPhase = (reportData.current_phase || 'phase_1_company_report') as WorkflowPhase;
+    const phasesCompleted = reportData.phases_completed || [];
+    const phaseDataStore = reportData.phase_data || {};
+
+    // Update company profile based on status
+    let workflowStatus = companyProfile.workflow_status;
+    let updateData: any = {};
+
+    if (status === 'completed') {
+      console.log('[Manus Webhook] Phase completed:', {
+        currentPhase,
+        hasResult: !!result,
+        resultType: typeof result,
+        resultIsNull: result === null,
+        resultIsUndefined: result === undefined,
+        fullResult: result,
+        fullBody: body, // Log entire body to see all fields
+      });
+
+      // Phase completed - store result
+      // If result is missing, try to fetch it from Manus API
+      let finalResult = result;
+      if (result === null || result === undefined || (typeof result === 'string' && result.trim() === '')) {
+        console.warn('[Manus Webhook] Result is missing from webhook payload. Attempting to fetch from Manus API...');
+
+        try {
+          const { getManusTaskStatus } = await import('@/lib/manus-ai-client');
+          const taskStatus = await getManusTaskStatus(task_id);
+
+          if (taskStatus.status === 'completed' && taskStatus.result) {
+            console.log('[Manus Webhook] Successfully fetched result from Manus API');
+            finalResult = taskStatus.result;
+          } else {
+            console.error('[Manus Webhook] Could not fetch result from Manus API:', {
+              status: taskStatus.status,
+              hasResult: !!taskStatus.result,
+            });
+            // Don't return error - just log it and continue without result
+            // The status endpoint can poll for it later
+          }
+        } catch (fetchError) {
+          console.error('[Manus Webhook] Error fetching result from Manus API:', fetchError);
+          // Continue without result - status endpoint can poll for it
+        }
+      }
+
+      // Check if we have a result now
+      if (finalResult === null || finalResult === undefined || (typeof finalResult === 'string' && finalResult.trim() === '')) {
+        console.warn('[Manus Webhook] No result available. Will be fetched later via status polling.');
+        // Don't return error - just update the phase status without result
+        // The result can be fetched later via the status endpoint
+        workflowStatus = mapPhaseToWorkflowStatus(currentPhase);
+        updateData = {
+          workflow_status: workflowStatus,
+          company_report: {
+            current_phase: currentPhase,
+            phases_completed: phasesCompleted,
+            phase_data: phaseDataStore, // Keep existing phase_data
+          },
+        };
+      } else {
+        let candidateResult = finalResult;
+        if (Array.isArray(candidateResult)) {
+          console.log('[Manus Webhook] Result is an array of messages, length:', candidateResult.length);
+          const assistantMessage = findBestAssistantMessage(candidateResult);
+          if (assistantMessage) {
+            console.log('[Manus Webhook] Selected assistant message with role:', assistantMessage?.role);
+            candidateResult = assistantMessage;
+          } else {
+            console.log('[Manus Webhook] No suitable assistant message found, using last message');
+            candidateResult = candidateResult[candidateResult.length - 1];
+          }
+        }
+
+        const structuredReport = await parseManusReportPayload(candidateResult);
+        let normalizedResult = structuredReport ?? candidateResult;
+
+        const isUserMessage = normalizedResult && typeof normalizedResult === 'object' && !Array.isArray(normalizedResult) && normalizedResult.role === 'user';
+
+        if (structuredReport) {
+          console.log('[Manus Webhook] Structured report extracted from Manus payload.');
+          normalizedResult = structuredReport;
+        } else {
+          console.warn('[Manus Webhook] Structured report not found in payload. Storing raw result for debugging purposes.');
+        }
+
+        console.log('[Manus Webhook] Normalized phase result summary:', {
+          phase: currentPhase,
+          isArray: Array.isArray(normalizedResult),
+          isObject: typeof normalizedResult === 'object' && normalizedResult !== null && !Array.isArray(normalizedResult),
+          hasReportShape: hasManusReportShape(normalizedResult),
+          preview: typeof normalizedResult === 'string'
+            ? normalizedResult.substring(0, 200)
+            : JSON.stringify(normalizedResult).substring(0, 200),
+        });
+
+        // Store the result in phase_data (only if it's not a user message)
+        if (normalizedResult && (!isUserMessage)) {
+          phaseDataStore[currentPhase] = normalizedResult;
+        } else if (isUserMessage) {
+          console.warn('[Manus Webhook] Result is a user message (input prompt), skipping storage. Will rely on manual fetch.');
+        }
+        phasesCompleted.push(currentPhase);
+
+        console.log('[Manus Webhook] Updated phaseDataStore:', {
+          phasesCompleted,
+          phaseDataKeys: Object.keys(phaseDataStore),
+          phaseDataStore: JSON.stringify(phaseDataStore).substring(0, 500),
+        });
+
+        const currentPhaseConfig = WORKFLOW_PHASES[currentPhase];
+        const nextPhase = currentPhaseConfig?.nextPhase;
+
+        // Phase 1 does NOT auto-advance - requires manual approval
+        if (currentPhase === 'phase_1_company_report') {
+          // Just store the result, don't advance
+          workflowStatus = 'reviewing'; // Set to reviewing state for manual approval
+          updateData = {
+            workflow_status: workflowStatus,
+            company_report: {
+              current_phase: currentPhase,
+              phases_completed: phasesCompleted,
+              phase_data: phaseDataStore,
+            },
+          };
+
+          console.log('[Manus Webhook] Phase 1 completed - updateData:', {
+            workflow_status: workflowStatus,
+            company_report: JSON.stringify(updateData.company_report).substring(0, 500),
+          });
+        } else if (nextPhase && nextPhase !== 'completed') {
+          // Auto-advance for phases 2-5
+          const nextPhaseConfig = WORKFLOW_PHASES[nextPhase];
+
+          // Build prompt for next phase
+          let nextPhasePrompt: string;
+
+          if (nextPhase === 'phase_2_icp_report') {
+            nextPhasePrompt = nextPhaseConfig.promptBuilder({
+              companyReport: phaseDataStore.phase_1_company_report,
+            });
+          } else if (nextPhase === 'phase_3_campaigns') {
+            nextPhasePrompt = nextPhaseConfig.promptBuilder({
+              companyReport: phaseDataStore.phase_1_company_report,
+              icpReport: phaseDataStore.phase_2_icp_report,
+            });
+          } else if (nextPhase === 'phase_4_optimization') {
+            // TODO: Fetch campaign data from Vibe Plus
+            nextPhasePrompt = nextPhaseConfig.promptBuilder({
+              companyReport: phaseDataStore.phase_1_company_report,
+              icpReport: phaseDataStore.phase_2_icp_report,
+              campaigns: phaseDataStore.phase_3_campaigns,
+              campaignData: {}, // Will be populated from Vibe Plus
+            });
+          } else if (nextPhase === 'phase_5_final_optimization') {
+            nextPhasePrompt = nextPhaseConfig.promptBuilder({
+              companyReport: phaseDataStore.phase_1_company_report,
+              icpReport: phaseDataStore.phase_2_icp_report,
+              campaigns: phaseDataStore.phase_3_campaigns,
+              campaignData: phaseDataStore.phase_4_optimization?.campaignData || {},
+              optimizationResults: phaseDataStore.phase_4_optimization,
+            });
+          } else {
+            nextPhasePrompt = '';
+          }
+
+          // Continue the same task with next phase
+          try {
+            await continueManusTask(task_id, nextPhasePrompt);
+          } catch (continueError) {
+            console.error('[Manus Webhook] Error continuing to next phase:', continueError);
+          }
+
+          workflowStatus = mapPhaseToWorkflowStatus(nextPhase);
+          updateData = {
+            workflow_status: workflowStatus,
+            company_report: {
+              current_phase: nextPhase,
+              phases_completed: phasesCompleted,
+              phase_data: phaseDataStore,
+            },
+          };
+        } else {
+          // All phases completed
+          workflowStatus = 'completed';
+          updateData = {
+            workflow_status: 'completed',
+            company_report: {
+              current_phase: 'completed',
+              phases_completed: phasesCompleted,
+              phase_data: phaseDataStore,
+              final_report: finalResult,
+            },
+            completed_at: new Date().toISOString(),
+          };
+        }
+      }
+    } else if (status === 'failed') {
+      workflowStatus = 'failed';
+      updateData = {
+        workflow_status: 'failed',
+      };
+    } else if (status === 'running') {
+      // Task is running - keep current status
+      updateData = {
+        workflow_status: workflowStatus,
+      };
+    }
+
+    // Update the company profile
+    const { error: updateError, data: updatedProfile } = await supabaseAdmin
+      .from('company_profiles')
+      .update(updateData)
+      .eq('id', companyProfile.id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('[Manus Webhook] Error updating company profile:', updateError);
+      return NextResponse.json({ error: 'Failed to update company profile' }, { status: 500 });
+    }
+
+    console.log('[Manus Webhook] Updated company profile:', {
+      id: updatedProfile?.id,
+      workflow_status: updatedProfile?.workflow_status,
+      hasCompanyReport: !!updatedProfile?.company_report,
+      phaseData: updatedProfile?.company_report?.phase_data,
+    });
+
+
+    return NextResponse.json({ success: true, updated: true });
+
+  } catch (error) {
+    console.error('[Manus Webhook] Unexpected error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+

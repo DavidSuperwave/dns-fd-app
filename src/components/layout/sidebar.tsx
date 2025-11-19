@@ -14,7 +14,10 @@ import {
   BookOpen,
   BarChart3,
   Calendar,
-  UserCheck
+  UserCheck,
+  FolderKanban,
+  Mail,
+  LayoutDashboard
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -28,7 +31,7 @@ interface SidebarItemProps {
 
 function SidebarItem({ href, children, active, icon, className, onClick }: SidebarItemProps) {
   const { scanInProgress } = useScanContext();
-  
+
   return (
     <Link
       href={href}
@@ -44,8 +47,8 @@ function SidebarItem({ href, children, active, icon, className, onClick }: Sideb
       {icon && <span className="mr-3 h-5 w-5 flex-shrink-0">{icon}</span>}
       <span className="flex-1">{children}</span>
       {scanInProgress && href !== "/domains" && (
-        <span 
-          className="ml-2 w-2 h-2 rounded-full bg-yellow-500 animate-pulse" 
+        <span
+          className="ml-2 w-2 h-2 rounded-full bg-yellow-500 animate-pulse"
           title="Scan in progress"
         />
       )}
@@ -64,7 +67,7 @@ export function Sidebar({ isAdmin }: SidebarProps) {
     <div className="sticky top-0 flex h-screen w-64 flex-col border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
       {/* Logo */}
       <div className="flex h-16 items-center border-b px-6">
-        <Link href="/domains" className="flex items-center gap-2">
+        <Link href="/overview" className="flex items-center gap-2">
           <Image
             src="/logo.png"
             alt="Superwave"
@@ -79,38 +82,62 @@ export function Sidebar({ isAdmin }: SidebarProps) {
       <nav className="flex-1 overflow-y-auto space-y-1 p-4 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
         {/* User Navigation */}
         <div className="space-y-1">
-          <SidebarItem 
-            href="/domains" 
+          <SidebarItem
+            href="/overview"
+            active={pathname === "/overview"}
+            icon={<LayoutDashboard />}
+          >
+            Overview
+          </SidebarItem>
+
+          <SidebarItem
+            href="/projects"
+            active={pathname?.startsWith("/projects")}
+            icon={<FolderKanban />}
+          >
+            Projects
+          </SidebarItem>
+
+          <SidebarItem
+            href="/leads"
+            active={pathname === "/leads"}
+            icon={<Mail />}
+          >
+            Leads
+          </SidebarItem>
+
+          <SidebarItem
+            href="/domains"
             active={pathname === "/domains"}
             icon={<Globe />}
           >
             Domains
           </SidebarItem>
-          
-          <SidebarItem 
-            href="/community" 
+
+          <SidebarItem
+            href="/community"
             active={pathname === "/community"}
             icon={<Users />}
           >
             Community
           </SidebarItem>
-          
-          <SidebarItem 
-            href="/billing" 
+
+          <SidebarItem
+            href="/billing"
             active={pathname === "/billing"}
             icon={<CreditCard />}
           >
             Billing
           </SidebarItem>
-          
-          <SidebarItem 
-            href="/settings" 
+
+          <SidebarItem
+            href="/settings"
             active={pathname === "/settings"}
             icon={<Settings />}
           >
             Settings
           </SidebarItem>
-          
+
           <SidebarItem
             href="/manual"
             icon={<BookOpen />}
@@ -132,14 +159,14 @@ export function Sidebar({ isAdmin }: SidebarProps) {
                 Admin
               </div>
               <div className="space-y-1">
-                <SidebarItem 
-                  href="/users" 
+                <SidebarItem
+                  href="/users"
                   active={pathname === "/users"}
                   icon={<UserCheck />}
                 >
                   Users
                 </SidebarItem>
-                
+
                 <SidebarItem
                   href="/cron-monitor"
                   active={pathname === "/cron-monitor"}
@@ -147,7 +174,7 @@ export function Sidebar({ isAdmin }: SidebarProps) {
                 >
                   Cron Monitor
                 </SidebarItem>
-                
+
                 <SidebarItem
                   href="/tenants"
                   active={pathname === "/tenants"}
@@ -155,7 +182,7 @@ export function Sidebar({ isAdmin }: SidebarProps) {
                 >
                   Tenants
                 </SidebarItem>
-                
+
                 <SidebarItem
                   href="/metrics"
                   active={pathname === "/metrics"}
