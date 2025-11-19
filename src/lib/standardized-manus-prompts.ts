@@ -269,19 +269,51 @@ export interface Phase3PromptData {
  * This prompt generates 3 distinct campaign angles for a specific sub-niche.
  */
 export function buildPhase3Prompt(data: Phase3PromptData): string {
-  // Find the specific sub-niche data to provide as context
+  // Debug logging
+  console.log('[Phase 3 Prompt] Input data:', {
+    hasPhase1: !!data.phase1Report,
+    hasPhase2: !!data.phase2Report,
+    targetSubNicheId: data.targetSubNicheId,
+    phase2Structure: data.phase2Report ? Object.keys(data.phase2Report) : 'null'
+  });
+
+  // Find the specific sub-niche data and its parent ICP
   let targetSubNiche = null;
+  let parentIcp = null;
+
   if (data.phase2Report && (data.phase2Report as any).icp_reports) {
     for (const icp of (data.phase2Report as any).icp_reports) {
-      const foundNiche = icp.sub_niches.find(
+      const foundNiche = icp.sub_niches?.find(
         (niche: any) => niche.sub_niche_id === data.targetSubNicheId
       );
       if (foundNiche) {
         targetSubNiche = foundNiche;
+        parentIcp = icp;
+        console.log('[Phase 3 Prompt] Found target sub-niche:', {
+          icp_id: icp.icp_id,
+          icp_name: icp.icp_name,
+          sub_niche_id: targetSubNiche.sub_niche_id,
+          sub_niche_name: targetSubNiche.sub_niche_name
+        });
         break;
       }
     }
   }
+
+  if (!targetSubNiche) {
+    console.warn('[Phase 3 Prompt] Could not find targetSubNicheId:', data.targetSubNicheId);
+  }
+
+  // Create enriched context including both ICP and sub-niche details
+  const enrichedContext = parentIcp ? {
+    icp_profile: {
+      icp_id: parentIcp.icp_id,
+      icp_name: parentIcp.icp_name,
+      icp_summary: parentIcp.icp_summary,
+      firmographics: parentIcp.firmographics
+    },
+    sub_niche_profile: targetSubNiche
+  } : targetSubNiche;
 
   return `
 **CRITICAL OUTPUT REQUIREMENTS:**
@@ -300,7 +332,7 @@ Based on the specific sub-niche profile provided below, generate 3 complete emai
 ${JSON.stringify(data.phase1Report, null, 2)}
 
 **TARGET SUB-NICHE PROFILE (FROM PHASE 2):**
-${JSON.stringify(targetSubNiche, null, 2)}
+${JSON.stringify(enrichedContext, null, 2)}
 
 **INSTRUCTIONS:**
 1.  **Analyze Profile:** Use the Target Sub-Niche Profile as the source material for all email copy. Focus on their specific pains, gains, and buyer persona.
