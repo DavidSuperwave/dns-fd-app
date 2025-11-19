@@ -18,8 +18,9 @@ const supabaseAdmin = createClient(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const resolvedCookieStore = await cookies();
 
   // Create Supabase client for auth check
@@ -45,7 +46,6 @@ export async function POST(
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
-    const { id } = params;
     const body = await request.json();
     const { phaseData, additionalData } = body; // Data from previous phase and any extra params
 
