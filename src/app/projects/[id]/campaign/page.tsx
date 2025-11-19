@@ -219,7 +219,7 @@ export default function CampaignPage() {
     companyReport?.phase_data?.phase_2_icp_creation ||
     companyReport?.phase_data?.phase_2;
 
-  // 1. Show loading state if generating
+  // 1. Show loading state if generating (Phase 1 only at page level)
   if (workflowStatus === 'generating' || workflowStatus === 'pending') {
     return (
       <DashboardLayout>
@@ -417,6 +417,7 @@ export default function CampaignPage() {
               projectId={projectId}
               companyProfileId={companyProfileId}
               icpData={phase2Data}
+              workflowStatus={workflowStatus}
             />
           </TabsContent>
 

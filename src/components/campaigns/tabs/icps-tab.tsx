@@ -12,9 +12,10 @@ interface ICPsTabProps {
     projectId: string;
     companyProfileId?: string;
     icpData?: any;
+    workflowStatus?: string; // Pass this from parent to check if generating
 }
 
-export function ICPsTab({ projectId, companyProfileId, icpData }: ICPsTabProps) {
+export function ICPsTab({ projectId, companyProfileId, icpData, workflowStatus }: ICPsTabProps) {
     const [isGenerating, setIsGenerating] = useState(false);
     const [selectedIcps, setSelectedIcps] = useState<string[]>([]);
 
@@ -42,12 +43,13 @@ export function ICPsTab({ projectId, companyProfileId, icpData }: ICPsTabProps) 
                 throw new Error(error.error || 'Failed to start ICP generation');
             }
 
-            toast.success("ICP generation started. This may take a few minutes.");
-            // In a real app, we'd poll for status or use a subscription
+            toast.success("ICP generation started. Check back in a few minutes.");
+
+            // Force page refresh to show loading state
+            window.location.reload();
         } catch (error) {
             console.error("Error generating ICPs:", error);
             toast.error("Failed to start ICP generation");
-        } finally {
             setIsGenerating(false);
         }
     };
@@ -117,6 +119,30 @@ export function ICPsTab({ projectId, companyProfileId, icpData }: ICPsTabProps) 
     const icpReports = icpData?.icp_reports || (icpData ? [icpData] : []);
     console.log('[ICPsTab] Parsed icpReports:', icpReports);
     const hasICPs = icpReports.length > 0;
+
+    // Show loading state if Phase 2 is generating
+    const isPhase2Generating = workflowStatus === 'creating_report' || isGenerating;
+
+    if (isPhase2Generating) {
+        return (
+            <div className="flex flex-col items-center justify-center py-16 space-y-6">
+                {/* Pulsing Circle Animation */}
+                <div className="relative flex items-center justify-center">
+                    <div className="absolute h-24 w-24 rounded-full border-4 border-blue-500 opacity-75 animate-ping"></div>
+                    <div className="relative h-24 w-24 rounded-full border-4 border-blue-500 animate-pulse">
+                        <div className="absolute inset-0 rounded-full border-2 border-blue-400/50"></div>
+                    </div>
+                </div>
+
+                <div className="text-center space-y-2">
+                    <h3 className="text-xl font-semibold">Generating Ideal Customer Profiles</h3>
+                    <p className="text-sm text-muted-foreground max-w-md">
+                        Our AI is analyzing your company data to create detailed ICPs. This typically takes 2-3 minutes.
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     if (!hasICPs) {
         return (

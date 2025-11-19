@@ -76,17 +76,24 @@ export async function POST(request: NextRequest) {
     // LOG THE ENTIRE RAW PAYLOAD
     console.log('[Manus Webhook] RAW PAYLOAD:', JSON.stringify(body, null, 2));
 
-    const { task_id, status, result, error } = body;
+    // Parse Manus's actual webhook structure
+    // Manus sends: { event_type: "task_stopped", task_detail: { task_id, stop_reason } }
+    const eventType = body.event_type;
+    const taskDetail = body.task_detail || {};
+    const task_id = taskDetail.task_id || body.task_id; // Support both structures
+    const stopReason = taskDetail.stop_reason;
+    let result = body.result; // May not be included
 
-    console.log('[Manus Webhook] Received webhook:', {
+    console.log('[Manus Webhook] Parsed webhook:', {
+      event_type: eventType,
       task_id,
-      status,
+      stop_reason: stopReason,
       hasResult: !!result,
       resultType: typeof result,
-      resultPreview: typeof result === 'string' ? result.substring(0, 200) : (result ? 'Object/Array' : 'null'),
-      error,
+      resultPreview: result ? JSON.stringify(result).substring(0, 200) : 'null',
     });
 
+    // Verify this is a real task completion (not a test ping)
     if (!task_id) {
       console.log('[Manus Webhook] Received webhook without task_id (likely verification ping). Returning 200 OK.');
       return NextResponse.json({ success: true, message: 'Webhook verified' }, { status: 200 });
@@ -100,8 +107,26 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (fetchError || !companyProfile) {
-      console.error('[Manus Webhook] Company profile not found for task_id:', task_id);
+      console.error('[Manus Webhook] Company profile not found:', task_id, fetchError);
       return NextResponse.json({ error: 'Company profile not found' }, { status: 404 });
+    }
+
+    console.log('[Manus Webhook] Found company profile:', companyProfile.id);
+
+    // If result is missing from webhook, fetch it from Manus API
+    if (!result) {
+      console.warn('[Manus Webhook] Result is missing from webhook payload. Attempting to fetch from Manus API...');
+      try {
+        const taskStatus = await getManusTaskStatus(task_id);
+        result = taskStatus.result;
+        console.log('[Manus Webhook] Successfully fetched result from Manus API');
+      } catch (apiError) {
+        console.error('[Manus Webhook] Failed to fetch result from Manus API:', apiError);
+        return NextResponse.json(
+          { error: 'Result missing and could not be fetched from Manus API' },
+          { status: 500 }
+        );
+      }
     }
 
     // Get current phase from company_report metadata
@@ -114,7 +139,11 @@ export async function POST(request: NextRequest) {
     let workflowStatus = companyProfile.workflow_status;
     let updateData: any = {};
 
-    if (status === 'completed') {
+    // Check if this is a successful task completion
+    // Manus sends event_type='task_stopped' with stop_reason='finish' for completed tasks
+    const isTaskCompleted = eventType === 'task_stopped' && (stopReason === 'finish' || stopReason === 'end_turn');
+
+    if (isTaskCompleted) {
       console.log('[Manus Webhook] Phase completed:', {
         currentPhase,
         hasResult: !!result,
