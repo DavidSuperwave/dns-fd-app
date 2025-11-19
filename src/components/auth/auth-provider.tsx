@@ -133,68 +133,84 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
         } else if (event === "SIGNED_IN") {
           if (!currentUser) return;
 
-          const signIn = async (email: string, password: string) => {
-            setIsLoading(true);
-            try {
-              const { data, error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-              });
-
-              if (error) {
-                throw error;
-              }
-
-              if (!data?.user) {
-                throw new Error('No user data returned');
-              }
-
-            } catch (error: unknown) {
-              console.error('Sign in error:', error);
-              const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-              throw new Error(errorMessage || "Error signing in");
-            } finally {
-              setIsLoading(false);
-            }
-          };
-
-          const signOut = async () => {
-            try {
-              setIsLoading(true);
-              // Clear all auth data
-              await supabase.auth.signOut();
-              // Clear local state
-              setUser(null);
-              setSession(null);
-              setIsAdmin(false);
-              // Clear any stored auth data
-              window.localStorage.removeItem('supabase.auth.token');
-              // Force redirect to login
-              router.push('/login');
-            } catch (error: unknown) {
-              console.error("Error signing out:", error);
-            } finally {
-              setIsLoading(false);
-            }
-          };
-
-          const value = {
-            user,
-            session,
-            isLoading,
-            isAdmin,
-            signIn,
-            signOut,
-            refreshSession,
-          };
-
-          return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-        }
-
-        export function useAuth() {
-          const context = useContext(AuthContext);
-          if (context === undefined) {
-            throw new Error("useAuth must be used within an AuthProvider");
+          // Check if user has admin metadata
+          if (checkAdminStatus(currentUser)) {
+            console.log('[Auth Provider] Admin user authenticated');
+            router.push("/overview");
+          } else {
+            router.push("/overview");
           }
-          return context;
         }
+      }
+    );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [router]);
+
+  const signIn = async (email: string, password: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.user) {
+        throw new Error('No user data returned');
+      }
+
+    } catch (error: unknown) {
+      console.error('Sign in error:', error);
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+      throw new Error(errorMessage || "Error signing in");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const signOut = async () => {
+    try {
+      setIsLoading(true);
+      // Clear all auth data
+      await supabase.auth.signOut();
+      // Clear local state
+      setUser(null);
+      setSession(null);
+      setIsAdmin(false);
+      // Clear any stored auth data
+      window.localStorage.removeItem('supabase.auth.token');
+      // Force redirect to login
+      router.push('/login');
+    } catch (error: unknown) {
+      console.error("Error signing out:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const value = {
+    user,
+    session,
+    isLoading,
+    isAdmin,
+    signIn,
+    signOut,
+    refreshSession,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+}
