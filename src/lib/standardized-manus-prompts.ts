@@ -1,5 +1,3 @@
-'''.ts", text=
-
 // standardized-manus-prompts.ts
 
 /**
