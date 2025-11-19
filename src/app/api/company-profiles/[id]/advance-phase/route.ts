@@ -77,7 +77,7 @@ export async function POST(
       return NextResponse.json({ error: 'Workflow already completed' }, { status: 400 });
     }
 
-    const nextPhase = currentPhaseConfig.nextPhase as WorkflowPhase;
+    const nextPhase = currentPhaseConfig.nextPhase as string as WorkflowPhase;
     const nextPhaseConfig = WORKFLOW_PHASES[nextPhase];
 
     // Store data from current phase
@@ -115,26 +115,6 @@ export async function POST(
         companyReport: phaseDataStore.phase_1_company_report,
         icpReport: phaseDataStore.phase_2_icp_report,
         targetSubNicheId,
-        ...additionalData
-      });
-    } else if (nextPhase === 'phase_4_optimization') {
-      // Phase 4 uses all previous data + campaign data from Vibe Plus
-      // TODO: Fetch campaign data from Vibe Plus API
-      nextPhasePrompt = nextPhaseConfig.promptBuilder({
-        companyReport: phaseDataStore.phase_1_company_report,
-        icpReport: phaseDataStore.phase_2_icp_report,
-        campaigns: phaseDataStore.phase_3_campaigns,
-        campaignData: {}, // Will be populated from Vibe Plus
-        ...additionalData
-      });
-    } else if (nextPhase === 'phase_5_final_optimization') {
-      // Phase 5 uses all previous data
-      nextPhasePrompt = nextPhaseConfig.promptBuilder({
-        companyReport: phaseDataStore.phase_1_company_report,
-        icpReport: phaseDataStore.phase_2_icp_report,
-        campaigns: phaseDataStore.phase_3_campaigns,
-        campaignData: phaseDataStore.phase_4_optimization?.campaignData || {},
-        optimizationResults: phaseDataStore.phase_4_optimization,
         ...additionalData
       });
     } else {
