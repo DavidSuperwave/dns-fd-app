@@ -94,9 +94,27 @@ export async function POST(
       });
     } else if (nextPhase === 'phase_3_campaigns') {
       // Phase 3 uses Phase 1 & 2 data
+      // Extract targetSubNicheId from selectedIcpIds if provided
+      let targetSubNicheId = additionalData?.targetSubNicheId;
+
+      if (!targetSubNicheId && additionalData?.selectedIcpIds?.length > 0) {
+        // Auto-select first sub-niche from first selected ICP
+        const icpReport = phaseDataStore.phase_2_icp_report;
+        const firstIcpId = additionalData.selectedIcpIds[0];
+
+        if (icpReport?.icp_reports) {
+          const selectedIcp = icpReport.icp_reports.find((icp: any) => icp.icp_id === firstIcpId);
+          if (selectedIcp?.sub_niches?.[0]?.sub_niche_id) {
+            targetSubNicheId = selectedIcp.sub_niches[0].sub_niche_id;
+            console.log('[Advance Phase] Auto-selected targetSubNicheId:', targetSubNicheId, 'from ICP:', firstIcpId);
+          }
+        }
+      }
+
       nextPhasePrompt = nextPhaseConfig.promptBuilder({
         companyReport: phaseDataStore.phase_1_company_report,
         icpReport: phaseDataStore.phase_2_icp_report,
+        targetSubNicheId,
         ...additionalData
       });
     } else if (nextPhase === 'phase_4_optimization') {
