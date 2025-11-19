@@ -124,3 +124,133 @@ export async function fetchAllInboxingDomains(options?: { search?: string | null
   return aggregated;
 }
 
+export type DomainSetupMode = 'single_name' | 'multiple_names' | 'csv_upload';
+
+export type DomainSetupPayload = {
+  job_type: 'DOMAIN_SETUP';
+  domain_name?: string; // Required for single_name and csv_upload (as identifier)
+  redirect_url?: string;
+  first_name?: string;
+  last_name?: string;
+
+  // Multiple names mode
+  multiple_names_mode?: boolean;
+  name_pairs?: Array<{ first_name: string; last_name: string }>;
+
+  // CSV upload mode
+  csv_upload_mode?: boolean;
+  csv_file?: File;
+
+  // Common optional
+  admin_email?: string;
+  user_count?: 25 | 49 | 99;
+  password_base_word?: string;
+};
+
+export type DomainJobResponse = {
+  status: string;
+  data?: {
+    message: string;
+    job_id: number;
+    task_id: string;
+  };
+  error?: string;
+};
+
+export type DomainSlotsResponse = {
+  status: string;
+  data?: {
+    total_slots: number;
+    used_slots: number;
+    pending_slots: number;
+    committed_slots: number;
+    available_slots: number;
+    user_id: number;
+    username: string;
+  };
+  error?: string;
+};
+
+export async function createDomainSetupJob(payload: DomainSetupPayload): Promise<DomainJobResponse> {
+  const apiKey = getApiKey();
+
+  let body: FormData | string;
+  const headers: Record<string, string> = {
+    'X-API-Key': apiKey,
+  };
+
+  if (payload.csv_upload_mode && payload.csv_file) {
+    const formData = new FormData();
+    formData.append('job_type', 'DOMAIN_SETUP');
+    formData.append('csv_upload_mode', 'true');
+    if (payload.domain_name) formData.append('domain_name', payload.domain_name);
+    if (payload.redirect_url) formData.append('redirect_url', payload.redirect_url);
+    if (payload.admin_email) formData.append('admin_email', payload.admin_email);
+    if (payload.user_count) formData.append('user_count', String(payload.user_count));
+    if (payload.password_base_word) formData.append('password_base_word', payload.password_base_word);
+    formData.append('csv_file', payload.csv_file);
+
+    body = formData;
+    // Content-Type header is automatically set by browser/fetch for FormData
+  } else {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(payload);
+  }
+
+  const response = await fetch(`${INBOXING_BASE_URL}/jobs`, {
+    method: 'POST',
+    headers,
+    body,
+  });
+
+  const data: DomainJobResponse = await response.json();
+
+  if (!response.ok) {
+    throw new InboxingApiError(data.error || 'Failed to create domain setup job', response.status);
+  }
+
+  return data;
+}
+
+export async function deleteDomain(domainName: string): Promise<DomainJobResponse> {
+  const apiKey = getApiKey();
+
+  const response = await fetch(`${INBOXING_BASE_URL}/jobs`, {
+    method: 'POST',
+    headers: {
+      'X-API-Key': apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      job_type: 'DOMAIN_DELETE',
+      domain_name: domainName,
+    }),
+  });
+
+  const data: DomainJobResponse = await response.json();
+
+  if (!response.ok) {
+    throw new InboxingApiError(data.error || 'Failed to delete domain', response.status);
+  }
+
+  return data;
+}
+
+export async function getDomainSlots(): Promise<DomainSlotsResponse> {
+  const apiKey = getApiKey();
+
+  const response = await fetch(`${INBOXING_BASE_URL}/users/me/domain-slots`, {
+    headers: {
+      'X-API-Key': apiKey,
+      'Cache-Control': 'no-cache',
+    },
+  });
+
+  const data: DomainSlotsResponse = await response.json();
+
+  if (!response.ok) {
+    throw new InboxingApiError(data.error || 'Failed to fetch domain slots', response.status);
+  }
+
+  return data;
+}

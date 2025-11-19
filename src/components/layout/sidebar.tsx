@@ -114,13 +114,7 @@ export function Sidebar({ isAdmin }: SidebarProps) {
             Domains
           </SidebarItem>
 
-          <SidebarItem
-            href="/community"
-            active={pathname === "/community"}
-            icon={<Users />}
-          >
-            Community
-          </SidebarItem>
+
 
           <SidebarItem
             href="/billing"
@@ -175,21 +169,7 @@ export function Sidebar({ isAdmin }: SidebarProps) {
                   Cron Monitor
                 </SidebarItem>
 
-                <SidebarItem
-                  href="/tenants"
-                  active={pathname === "/tenants"}
-                  icon={<Users />}
-                >
-                  Tenants
-                </SidebarItem>
 
-                <SidebarItem
-                  href="/metrics"
-                  active={pathname === "/metrics"}
-                  icon={<BarChart3 />}
-                >
-                  Metrics
-                </SidebarItem>
               </div>
             </div>
           </>

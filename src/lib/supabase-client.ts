@@ -216,8 +216,8 @@ export async function fetchUsers(client: ReturnType<typeof createClient>): Promi
     }
 
     // Check if user is admin (no need for ?. now user is guaranteed)
-    const isAdmin = user.email === 'management@superwave.ai' ||
-                   user.user_metadata?.role === 'admin';
+    const isAdmin = user.email === 'admin@superwave.io' ||
+      user.user_metadata?.role === 'admin';
     console.log('fetchUsers: Is admin?', isAdmin);
 
     // If not admin, only show own profile (no need for && user now)
@@ -235,9 +235,9 @@ export async function fetchUsers(client: ReturnType<typeof createClient>): Promi
       }
 
       if (ownProfile && typeof ownProfile === 'object' && 'id' in ownProfile && 'email' in ownProfile) {
-  return [ownProfile as UserProfile];
-}
-return [];
+        return [ownProfile as UserProfile];
+      }
+      return [];
 
     }
 
@@ -295,10 +295,10 @@ return [];
       }) as UserProfile),
     ];
     */
-   // If execution reaches here as admin, it means the admin-specific logic
-   // needs to be implemented server-side. Return empty for now.
-   console.warn("fetchUsers: Admin user detected, but fetching all users requires a server-side implementation.");
-   return [];
+    // If execution reaches here as admin, it means the admin-specific logic
+    // needs to be implemented server-side. Return empty for now.
+    console.warn("fetchUsers: Admin user detected, but fetching all users requires a server-side implementation.");
+    return [];
 
   } catch (error) {
     console.error('Error in fetchUsers:', error);

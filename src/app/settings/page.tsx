@@ -19,7 +19,7 @@ import { createClient, generateSecurePassword } from "../../lib/supabase-client"
 
 export default function SettingsPage() {
   // User profile settings
-  const [userEmail, setUserEmail] = useState<string>("management@superwave.ai");
+  const [userEmail, setUserEmail] = useState<string>("admin@superwave.io");
   // Removed unused userRole state
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
@@ -33,18 +33,18 @@ export default function SettingsPage() {
     twoFactorSecret: "",
     twoFactorUri: "",
   });
-  
+
   // Loading states
   const [isLoading, setIsLoading] = useState(false);
   const [is2FALoading, setIs2FALoading] = useState(false);
-  
+
   // Password fields
   const [passwordFields, setPasswordFields] = useState({
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
   });
-  
+
   // Refs for copying
   const passwordRef = useRef<HTMLInputElement>(null);
   const twoFactorSecretRef = useRef<HTMLInputElement>(null);
@@ -53,16 +53,16 @@ export default function SettingsPage() {
   const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
+
     try {
       const { error } = await supabase.auth.updateUser({
         email: userEmail
       });
-      
+
       if (error) {
         throw error;
       }
-      
+
       toast.success("Email updated successfully");
     } catch (error) {
       console.error("Error updating email:", error);
@@ -75,50 +75,50 @@ export default function SettingsPage() {
   // Handle password change
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (passwordFields.newPassword !== passwordFields.confirmPassword) {
       toast.error("New passwords don't match");
       return;
     }
-    
+
     if (!passwordFields.currentPassword || !passwordFields.newPassword) {
       toast.error("All password fields are required");
       return;
     }
-    
+
     setIsLoading(true);
-    
+
     try {
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: userEmail,
         password: passwordFields.currentPassword,
       });
-      
+
       if (signInError) {
         toast.error("Current password is incorrect");
         setIsLoading(false);
         return;
       }
-      
+
       const { error } = await supabase.auth.updateUser({
         password: passwordFields.newPassword
       });
-      
+
       if (error) {
         throw error;
       }
-      
+
       setPasswordFields({
         currentPassword: "",
         newPassword: "",
         confirmPassword: "",
       });
-      
+
       setSecuritySettings(prev => ({
         ...prev,
         passwordLastChanged: new Date().toISOString().split("T")[0],
       }));
-      
+
       toast.success("Password changed successfully");
     } catch (error) {
       console.error("Error changing password:", error);
@@ -136,7 +136,7 @@ export default function SettingsPage() {
       newPassword,
       confirmPassword: newPassword,
     });
-    
+
     setTimeout(() => {
       if (passwordRef.current) {
         passwordRef.current.select();
@@ -160,15 +160,15 @@ export default function SettingsPage() {
     const fetchUserProfile = async () => {
       const { data } = await supabase.auth.getUser();
       if (data.user) {
-        setUserEmail(data.user.email || "management@superwave.ai");
-        
+        setUserEmail(data.user.email || "admin@superwave.io");
+
         const role = data.user.user_metadata?.role as string;
         const email = data.user.email;
-        const isAdminEmail = email === 'management@superwave.ai';
-        
+        const isAdminEmail = email === 'admin@superwave.io';
+
         // Removed setting unused userRole state
         setIsAdmin(isAdminEmail || role === 'admin');
-        
+
         if (data.user.user_metadata?.totp_secret) {
           setSecuritySettings(prev => ({
             ...prev,
@@ -179,7 +179,7 @@ export default function SettingsPage() {
         }
       }
     };
-    
+
     fetchUserProfile();
   }, []);
 
@@ -402,7 +402,7 @@ export default function SettingsPage() {
                   <div className="bg-white p-4 inline-block rounded-md">
                     <QRCodeSVG value={securitySettings.twoFactorUri} size={200} />
                   </div>
-                  
+
                   <div className="grid gap-2 mt-4">
                     <Label htmlFor="totp-secret">Or enter this code manually:</Label>
                     <div className="flex gap-2">
@@ -422,7 +422,7 @@ export default function SettingsPage() {
                       </Button>
                     </div>
                   </div>
-                  
+
                   <Button
                     onClick={enable2FA}
                     disabled={is2FALoading}
@@ -443,9 +443,9 @@ export default function SettingsPage() {
                     </div>
                     <span className="font-medium">Two-factor authentication is enabled</span>
                   </div>
-                  
+
                   <p>Your account is secured with two-factor authentication. If you want to disable it, click the button below.</p>
-                  
+
                   <Button
                     variant="destructive"
                     onClick={disable2FA}
@@ -459,7 +459,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </div>
-        
+
         {/* Admin Settings */}
         {isAdmin && (
           <div className="mt-8">
@@ -482,11 +482,11 @@ export default function SettingsPage() {
                       <span className="font-medium">Important:</span>
                     </p>
                     <p className="text-sm text-amber-800">
-                      If you are <strong>management@superwave.ai</strong> but don&apos;t see admin privileges or can&apos;t manage users,
+                      If you are <strong>admin@superwave.io</strong> but don&apos;t see admin privileges or can&apos;t manage users,
                       use the sync button below to fix your permissions.
                     </p>
                   </div>
-                  
+
                   <div className="flex space-x-4">
                     <Button
                       onClick={async () => {
@@ -497,9 +497,9 @@ export default function SettingsPage() {
                               'Content-Type': 'application/json'
                             }
                           });
-                          
+
                           const data = await response.json();
-                          
+
                           if (response.ok && data.success) {
                             toast.success("Supabase admin permissions synchronized successfully!");
                             // Force refresh the page to apply changes

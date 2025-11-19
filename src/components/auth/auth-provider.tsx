@@ -30,20 +30,20 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
   // Function to check if user is admin
   const checkAdminStatus = (user: User | null): boolean => {
     if (!user) return false;
-    
+
     // Check if this is the admin email
     const isAdminEmail = user.email === 'admin@superwave.io';
-    
+
     // Check if role is admin in user metadata
     const hasAdminRole = user.user_metadata?.role === 'admin';
-    
+
     // Log for debugging
     console.log(`[Auth Provider] Admin check for ${user.email}:`, {
       isAdminEmail,
       hasAdminRole,
       metadata: user.user_metadata
     });
-    
+
     return isAdminEmail || hasAdminRole;
   };
 
@@ -57,7 +57,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
 
   // Last refresh timestamp to prevent excessive refreshes
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
-  
+
   // Function to refresh session - with rate limiting to prevent excessive calls
   const refreshSession = async (force = false) => {
     // Only refresh if more than 10 seconds have passed since last refresh, unless forced
@@ -66,10 +66,10 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
       console.log('[Auth Provider] Skipping refresh - too soon since last refresh');
       return;
     }
-    
+
     console.log('[Auth Provider] Refreshing session');
     setIsLoading(true);
-    
+
     try {
       // Don't refresh if we don't have a session, just get the current session
       const { data: currentData } = await supabase.auth.getSession();
@@ -80,10 +80,10 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
         setIsAdmin(false);
         return;
       }
-      
+
       // Get user data without forcing token refresh
       const { data: userData } = await supabase.auth.getUser();
-      
+
       // Only update admin status without refreshing token
       if (userData.user) {
         const adminStatus = checkAdminStatus(userData.user);
@@ -91,7 +91,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
         setSession(currentData.session);
         setIsAdmin(adminStatus);
         setLastRefreshTime(now);
-        
+
         console.log('[Auth Provider] Updated user data:', {
           email: userData.user.email,
           isAdmin: adminStatus
@@ -133,89 +133,68 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
         } else if (event === "SIGNED_IN") {
           if (!currentUser) return;
 
-          // --- Removed Profile Creation Logic ---
-          // Profile creation using supabaseAdmin was removed as it's insecure client-side.
-          // This should be handled server-side (e.g., DB trigger, API route).
-          // console.log('[Auth Provider] Profile creation logic removed from client-side.');
+          const signIn = async (email: string, password: string) => {
+            setIsLoading(true);
+            try {
+              const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+              });
 
-          // Check if user has admin metadata
-          if (checkAdminStatus(currentUser)) {
-            console.log('[Auth Provider] Admin user authenticated');
-            router.push("/domains");
-          } else {
-            router.push("/domains");
-          }
+              if (error) {
+                throw error;
+              }
+
+              if (!data?.user) {
+                throw new Error('No user data returned');
+              }
+
+            } catch (error: unknown) {
+              console.error('Sign in error:', error);
+              const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+              throw new Error(errorMessage || "Error signing in");
+            } finally {
+              setIsLoading(false);
+            }
+          };
+
+          const signOut = async () => {
+            try {
+              setIsLoading(true);
+              // Clear all auth data
+              await supabase.auth.signOut();
+              // Clear local state
+              setUser(null);
+              setSession(null);
+              setIsAdmin(false);
+              // Clear any stored auth data
+              window.localStorage.removeItem('supabase.auth.token');
+              // Force redirect to login
+              router.push('/login');
+            } catch (error: unknown) {
+              console.error("Error signing out:", error);
+            } finally {
+              setIsLoading(false);
+            }
+          };
+
+          const value = {
+            user,
+            session,
+            isLoading,
+            isAdmin,
+            signIn,
+            signOut,
+            refreshSession,
+          };
+
+          return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
         }
-      }
-    );
 
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, [router]);
-
-  const signIn = async (email: string, password: string) => {
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      if (!data?.user) {
-        throw new Error('No user data returned');
-      }
-
-    } catch (error: unknown) {
-      console.error('Sign in error:', error);
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-      throw new Error(errorMessage || "Error signing in");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const signOut = async () => {
-    try {
-      setIsLoading(true);
-      // Clear all auth data
-      await supabase.auth.signOut();
-      // Clear local state
-      setUser(null);
-      setSession(null);
-      setIsAdmin(false);
-      // Clear any stored auth data
-      window.localStorage.removeItem('supabase.auth.token');
-      // Force redirect to login
-      router.push('/login');
-    } catch (error: unknown) {
-      console.error("Error signing out:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const value = {
-    user,
-    session,
-    isLoading,
-    isAdmin,
-    signIn,
-    signOut,
-    refreshSession,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
-}
+        export function useAuth() {
+          const context = useContext(AuthContext);
+          if (context === undefined) {
+            throw new Error("useAuth must be used within an AuthProvider");
+          }
+          return context;
+        }

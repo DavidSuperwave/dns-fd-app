@@ -29,19 +29,19 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Extra validation check
     if (!formData.email || !formData.password) {
       toast.error("Please enter both email and password");
       return;
     }
-    
+
     setIsLoading(true);
 
     try {
       await signIn(formData.email, formData.password);
       toast.success("Logged in successfully");
-      router.push("/domains");
+      router.push("/overview");
     } catch (error) {
       console.error("Login error:", error);
       toast.error(error instanceof Error ? error.message : "Login failed. Please check your credentials.");
