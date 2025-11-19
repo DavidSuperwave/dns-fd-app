@@ -21,22 +21,19 @@ export function Phase1Approval({ projectId, companyProfileId, reportData, onAppr
     const handleApprove = async () => {
         setIsApproving(true);
         try {
-            // Call API to advance phase
-            const response = await fetch(`/api/company-profiles/${companyProfileId}/advance-phase`, {
+            // Call API to approve (but NOT start Phase 2 yet)
+            const response = await fetch(`/api/company-profiles/${companyProfileId}/approve`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    phaseData: reportData // Pass current data to next phase
-                }),
             });
 
             if (!response.ok) {
                 throw new Error('Failed to approve report');
             }
 
-            toast.success("Report approved! Starting Phase 2...");
+            toast.success("Report approved! Proceed to workspace setup.");
             onApprove();
 
         } catch (error) {
@@ -115,7 +112,7 @@ export function Phase1Approval({ projectId, companyProfileId, reportData, onAppr
                     ) : (
                         <>
                             <CheckCircle className="mr-2 h-4 w-4" />
-                            Approve & Continue
+                            Approve Report
                         </>
                     )}
                 </Button>

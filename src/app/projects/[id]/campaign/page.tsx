@@ -250,6 +250,21 @@ export default function CampaignPage() {
     );
   }
 
+  // 2a. If approved but no workspace selected, show workspace selection
+  // This is the new state after Phase 1 approval but before workspace setup
+  if (workflowStatus === 'approved' && !workspaceType) {
+    return (
+      <DashboardLayout>
+        <WorkspaceSelection
+          projectId={projectId}
+          projectName={project.name}
+          onSelectStandard={handleSelectStandard}
+          onSelectCustom={handleSelectCustom}
+        />
+      </DashboardLayout>
+    );
+  }
+
   // 3. Safety check: If no company profile, show error with retry button
   if (!project.company_profiles) {
     return (
