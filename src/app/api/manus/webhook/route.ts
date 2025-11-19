@@ -318,22 +318,6 @@ export async function POST(request: NextRequest) {
               companyReport: phaseDataStore.phase_1_company_report,
               icpReport: phaseDataStore.phase_2_icp_report,
             });
-          } else if (nextPhase === 'phase_4_optimization') {
-            // TODO: Fetch campaign data from Vibe Plus
-            nextPhasePrompt = nextPhaseConfig.promptBuilder({
-              companyReport: phaseDataStore.phase_1_company_report,
-              icpReport: phaseDataStore.phase_2_icp_report,
-              campaigns: phaseDataStore.phase_3_campaigns,
-              campaignData: {}, // Will be populated from Vibe Plus
-            });
-          } else if (nextPhase === 'phase_5_final_optimization') {
-            nextPhasePrompt = nextPhaseConfig.promptBuilder({
-              companyReport: phaseDataStore.phase_1_company_report,
-              icpReport: phaseDataStore.phase_2_icp_report,
-              campaigns: phaseDataStore.phase_3_campaigns,
-              campaignData: phaseDataStore.phase_4_optimization?.campaignData || {},
-              optimizationResults: phaseDataStore.phase_4_optimization,
-            });
           } else {
             nextPhasePrompt = '';
           }
