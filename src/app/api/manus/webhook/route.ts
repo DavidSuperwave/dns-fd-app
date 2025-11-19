@@ -242,8 +242,22 @@ export async function POST(request: NextRequest) {
             workflow_status: workflowStatus,
             company_report_keys: Object.keys(updateData.company_report || {}),
           });
+        } else if (currentPhase === 'phase_2_icp_report') {
+          // TEMPORARILY DISABLED: Phase 2 does NOT auto-advance to Phase 3
+          // Store the result and wait for manual trigger
+          workflowStatus = 'icp_ready'; // New status: ICP generated, ready for campaign creation
+          updateData = {
+            workflow_status: workflowStatus,
+            company_report: {
+              current_phase: currentPhase,
+              phases_completed: phasesCompleted,
+              phase_data: phaseDataStore,
+            },
+          };
+
+          console.log('[Manus Webhook] Phase 2 completed - NOT auto-advancing to Phase 3 (temporarily disabled)');
         } else if (nextPhase && nextPhase !== 'completed') {
-          // Auto-advance for phases 2-5
+          // Auto-advance for phases 3-5 (when Phase 3 is re-enabled)
           const nextPhaseConfig = WORKFLOW_PHASES[nextPhase];
 
           // Build prompt for next phase
