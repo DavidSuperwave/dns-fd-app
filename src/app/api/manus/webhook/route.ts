@@ -63,7 +63,16 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body: any = {};
+    try {
+      const text = await request.text();
+      if (text) {
+        body = JSON.parse(text);
+      }
+    } catch (e) {
+      console.log('[Manus Webhook] Failed to parse JSON body, treating as empty/verification');
+    }
+
     const { task_id, status, result, error } = body;
 
     console.log('[Manus Webhook] Received webhook:', {
@@ -76,8 +85,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (!task_id) {
-      console.error('[Manus Webhook] Missing task_id in webhook payload');
-      return NextResponse.json({ error: 'Missing task_id' }, { status: 400 });
+      console.log('[Manus Webhook] Received webhook without task_id (likely verification ping). Returning 200 OK.');
+      return NextResponse.json({ success: true, message: 'Webhook verified' }, { status: 200 });
     }
 
     // Find company profile with this manus_workflow_id

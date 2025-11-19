@@ -215,8 +215,10 @@ export async function registerManusWebhook(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        url: webhookUrl,
-        events: events,
+        webhook: {
+          url: webhookUrl,
+          events: events,
+        },
       }),
     });
 
