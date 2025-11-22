@@ -10,7 +10,7 @@ import { hasManusReportShape, parseManusReportPayload } from '@/lib/manus-result
 
 const ASSISTANT_ROLES = new Set(['assistant', 'model', 'ai']);
 
-function findBestAssistantMessage(messages: any[]): any {
+function findBestAssistantMessage(messages: any[], targetKey?: string): any {
   if (!Array.isArray(messages)) return messages;
 
   const assistantMessages = messages.filter(
@@ -21,6 +21,19 @@ function findBestAssistantMessage(messages: any[]): any {
     return messages[messages.length - 1];
   }
 
+  // Helper to check if message contains the specific target key we want
+  const hasTargetKey = (msg: any) => {
+    if (!targetKey) return false;
+
+    // Check text content
+    if (Array.isArray(msg.content)) {
+      return msg.content.some((item: any) =>
+        typeof item?.text === 'string' && item.text.includes(targetKey)
+      );
+    }
+    return false;
+  };
+
   const hasOutputFile = (msg: any) =>
     Array.isArray(msg.content) &&
     msg.content.some(
@@ -30,7 +43,7 @@ function findBestAssistantMessage(messages: any[]): any {
         (item.fileUrl || item.file_url || item.url)
     );
 
-  const hasReportObject = (msg: any) =>
+  const hasReportShape = (msg: any) =>
     Array.isArray(msg.content) &&
     msg.content.some(
       (item: any) => item && typeof item === 'object' && hasManusReportShape(item)
@@ -41,16 +54,35 @@ function findBestAssistantMessage(messages: any[]): any {
     msg.content.some(
       (item: any) =>
         typeof item?.text === 'string' &&
-        item.text.includes('{') &&
-        item.text.includes('company')
+        (
+          item.text.includes('icp_reports') ||
+          item.text.includes('client_offer_brief') ||
+          item.text.includes('campaign_blueprints') ||
+          (item.text.includes('{') && item.text.includes('}'))
+        )
     );
 
-  return (
-    assistantMessages.find(hasOutputFile) ||
-    assistantMessages.find(hasReportObject) ||
-    assistantMessages.find(hasJsonText) ||
-    assistantMessages[assistantMessages.length - 1]
-  );
+  // 1. First priority: Message with the specific target key (e.g. 'icp_reports')
+  if (targetKey) {
+    for (let i = assistantMessages.length - 1; i >= 0; i--) {
+      const msg = assistantMessages[i];
+      if (hasTargetKey(msg)) {
+        console.log(`[Manus Webhook] Found message with target key: ${targetKey}`);
+        return msg;
+      }
+    }
+  }
+
+  // 2. Second priority: General report shape or output file
+  // Search backwards to find the LATEST message that looks like a report
+  for (let i = assistantMessages.length - 1; i >= 0; i--) {
+    const msg = assistantMessages[i];
+    if (hasOutputFile(msg) || hasReportShape(msg) || hasJsonText(msg)) {
+      return msg;
+    }
+  }
+
+  return assistantMessages[assistantMessages.length - 1];
 }
 
 export const runtime = 'edge';
@@ -77,12 +109,39 @@ export async function POST(request: NextRequest) {
     console.log('[Manus Webhook] RAW PAYLOAD:', JSON.stringify(body, null, 2));
 
     // Parse Manus's actual webhook structure
-    // Manus sends: { event_type: "task_stopped", task_detail: { task_id, stop_reason } }
+    // Manus sends: { event_type: "task_stopped", task_detail: { task_id, stop_reason, message } }
     const eventType = body.event_type;
     const taskDetail = body.task_detail || {};
     const task_id = taskDetail.task_id || body.task_id; // Support both structures
     const stopReason = taskDetail.stop_reason;
-    let result = body.result; // May not be included
+
+    // Check for result in multiple places
+    let result = body.result;
+
+    // If result is missing, check task_detail.message (often contains the JSON output)
+    // Also check body.message, body.output, body.data as fallbacks
+    const potentialMessage = taskDetail.message || body.message || body.output || body.data;
+
+    if (!result && potentialMessage) {
+      console.log('[Manus Webhook] Found potential result in message/output field');
+      try {
+        // It might be a JSON string
+        if (typeof potentialMessage === 'string') {
+          // Check if it looks like JSON
+          if (potentialMessage.trim().startsWith('{') || potentialMessage.trim().startsWith('[')) {
+            result = JSON.parse(potentialMessage);
+            console.log('[Manus Webhook] Successfully parsed JSON from message field');
+          } else {
+            result = potentialMessage;
+          }
+        } else {
+          result = potentialMessage;
+        }
+      } catch (e) {
+        console.log('[Manus Webhook] message field is not valid JSON, using as raw string');
+        result = potentialMessage;
+      }
+    }
 
     console.log('[Manus Webhook] Parsed webhook:', {
       event_type: eventType,
@@ -90,7 +149,7 @@ export async function POST(request: NextRequest) {
       stop_reason: stopReason,
       hasResult: !!result,
       resultType: typeof result,
-      resultPreview: result ? JSON.stringify(result).substring(0, 200) : 'null',
+      resultPreview: result ? (typeof result === 'string' ? result.substring(0, 200) : JSON.stringify(result).substring(0, 200)) : 'null',
     });
 
     // Verify this is a real task completion (not a test ping)
@@ -204,7 +263,19 @@ export async function POST(request: NextRequest) {
         let candidateResult = finalResult;
         if (Array.isArray(candidateResult)) {
           console.log('[Manus Webhook] Result is an array of messages, length:', candidateResult.length);
-          const assistantMessage = findBestAssistantMessage(candidateResult);
+
+          // Determine target key based on phase to help find the right message
+          let targetKey: string | undefined;
+          if (currentPhase === 'phase_2_icp_report') {
+            targetKey = 'icp_reports';
+          } else if (currentPhase === 'phase_3_campaigns') {
+            targetKey = 'campaign_blueprints';
+          } else if (currentPhase === 'phase_1_company_report') {
+            targetKey = 'client_offer_brief';
+          }
+
+          const assistantMessage = findBestAssistantMessage(candidateResult, targetKey);
+
           if (assistantMessage) {
             console.log('[Manus Webhook] Selected assistant message with role:', assistantMessage?.role);
             candidateResult = assistantMessage;

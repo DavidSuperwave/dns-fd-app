@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Building2, Upload, X, File } from "lucide-react";
+import { ArrowLeft, Building2, Upload, X, File, ArrowRight } from "lucide-react";
 import { CompanyLoadingStates } from "@/components/company/company-loading-states";
 
 const industryOptions = [
@@ -30,6 +30,7 @@ export default function CreateCompanyPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [companyProfileId, setCompanyProfileId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<string>('pending');
   const [formData, setFormData] = useState({
     clientName: "",
@@ -94,8 +95,9 @@ export default function CreateCompanyPage() {
       setWorkflowStatus(data.companyProfile.workflow_status);
 
       if (projectId) {
-        // Redirect to the specific project campaign page
-        router.push(`/projects/${projectId}/campaign`);
+        // Don't redirect automatically - let the user see the animation
+        // router.push(`/projects/${projectId}/campaign`);
+        setProjectId(projectId); // Save for manual navigation
       } else {
         // Fallback if project creation failed (shouldn't happen with new API)
         console.warn('Project ID missing in response, redirecting to projects list');
@@ -155,11 +157,25 @@ export default function CreateCompanyPage() {
         </div>
 
         {isSubmitting ? (
-          <CompanyLoadingStates
-            companyName={formData.clientName}
-            workflowStatus={workflowStatus}
-            companyProfileId={companyProfileId || undefined}
-          />
+          <>
+            <CompanyLoadingStates
+              companyName={formData.clientName}
+              workflowStatus={workflowStatus}
+              companyProfileId={companyProfileId || undefined}
+            />
+            {projectId && (
+              <div className="flex justify-center mt-8">
+                <Button
+                  size="lg"
+                  onClick={() => router.push(`/projects/${projectId}/campaign`)}
+                  className="animate-in fade-in slide-in-from-bottom-4 duration-1000"
+                >
+                  Continue to Campaign
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </>
         ) : (
           <Card>
             <CardHeader>

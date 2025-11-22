@@ -13,9 +13,11 @@ interface ICPsTabProps {
     companyProfileId?: string;
     icpData?: any;
     workflowStatus?: string; // Pass this from parent to check if generating
+    onGenerate?: () => void;
+    onTabChange?: (tab: string) => void;
 }
 
-export function ICPsTab({ projectId, companyProfileId, icpData, workflowStatus }: ICPsTabProps) {
+export function ICPsTab({ projectId, companyProfileId, icpData, workflowStatus, onGenerate, onTabChange }: ICPsTabProps) {
     const [isGenerating, setIsGenerating] = useState(false);
     const [selectedIcps, setSelectedIcps] = useState<string[]>([]);
 
@@ -45,8 +47,10 @@ export function ICPsTab({ projectId, companyProfileId, icpData, workflowStatus }
 
             toast.success("ICP generation started. Check back in a few minutes.");
 
-            // Force page refresh to show loading state
-            window.location.reload();
+            // Notify parent to refresh data
+            if (onGenerate) {
+                onGenerate();
+            }
         } catch (error) {
             console.error("Error generating ICPs:", error);
             toast.error("Failed to start ICP generation");
@@ -54,13 +58,15 @@ export function ICPsTab({ projectId, companyProfileId, icpData, workflowStatus }
         }
     };
 
-    const handleGenerateCampaigns = async () => {
+    const handleGenerateCampaigns = async (specificIcpIds?: string[]) => {
         if (!companyProfileId) {
             toast.error("Company profile not found");
             return;
         }
 
-        if (selectedIcps.length === 0) {
+        const idsToProcess = specificIcpIds || selectedIcps;
+
+        if (idsToProcess.length === 0) {
             toast.error("Please select at least one ICP");
             return;
         }
@@ -76,7 +82,7 @@ export function ICPsTab({ projectId, companyProfileId, icpData, workflowStatus }
                 body: JSON.stringify({
                     targetPhase: 'phase_3_campaigns',
                     additionalData: {
-                        selectedIcpIds: selectedIcps
+                        selectedIcpIds: idsToProcess
                     }
                 }),
             });
@@ -86,7 +92,18 @@ export function ICPsTab({ projectId, companyProfileId, icpData, workflowStatus }
                 throw new Error(error.error || 'Failed to start campaign generation');
             }
 
-            toast.success(`Campaign generation started for ${selectedIcps.length} ICPs.`);
+            toast.success(`Campaign generation started for ${idsToProcess.length} ICPs.`);
+
+            // Switch to campaigns tab to show progress/result
+            if (onTabChange) {
+                onTabChange('campaigns');
+            }
+
+            // Notify parent to refresh data
+            if (onGenerate) {
+                onGenerate();
+            }
+
         } catch (error) {
             console.error("Error generating campaigns:", error);
             toast.error("Failed to start campaign generation");
@@ -186,7 +203,7 @@ export function ICPsTab({ projectId, companyProfileId, icpData, workflowStatus }
                     <Button variant="outline" size="sm" onClick={handleSelectAll}>
                         {selectedIcps.length === icpReports.length ? "Deselect All" : "Select All"}
                     </Button>
-                    <Button disabled={selectedIcps.length === 0 || isGenerating} onClick={handleGenerateCampaigns}>
+                    <Button disabled={selectedIcps.length === 0 || isGenerating} onClick={() => handleGenerateCampaigns()}>
                         {isGenerating ? (
                             <>
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -273,6 +290,23 @@ export function ICPsTab({ projectId, companyProfileId, icpData, workflowStatus }
                                     </div>
                                 )}
                             </CardContent>
+                            <div className="p-4 pt-0 mt-auto">
+                                <Button
+                                    className="w-full"
+                                    variant={isSelected ? "default" : "outline"}
+                                    onClick={() => handleGenerateCampaigns([icpId])}
+                                    disabled={isGenerating}
+                                >
+                                    {isGenerating ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <>
+                                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                                            Generate Campaign
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
                         </Card>
                     );
                 })}

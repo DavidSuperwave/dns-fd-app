@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase-client"; // Import createClient, removed supabaseAdmin
 import { User } from "@supabase/supabase-js";
@@ -57,6 +57,9 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
 
   // Last refresh timestamp to prevent excessive refreshes
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
+
+  // Track if we've handled the initial session to prevent navigation on rehydration
+  const hasHandledInitialSession = useRef(false);
 
   // Function to refresh session - with rate limiting to prevent excessive calls
   const refreshSession = async (force = false) => {
@@ -130,15 +133,20 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) { 
           setIsAdmin(false);
           window.localStorage.removeItem('supabase.auth.token');
           router.push("/login");
+          // Reset the flag on sign out
+          hasHandledInitialSession.current = false;
         } else if (event === "SIGNED_IN") {
           if (!currentUser) return;
 
-          // Check if user has admin metadata
-          if (checkAdminStatus(currentUser)) {
-            console.log('[Auth Provider] Admin user authenticated');
+          // Only navigate if this is a NEW sign-in, not a session rehydration
+          // If we already have a session (hasHandledInitialSession is true), 
+          // this is likely just the session being refreshed/rehydrated, not a new sign-in
+          if (!hasHandledInitialSession.current) {
+            console.log('[Auth Provider] New sign-in detected, navigating to overview');
+            hasHandledInitialSession.current = true;
             router.push("/overview");
           } else {
-            router.push("/overview");
+            console.log('[Auth Provider] Session rehydrated, staying on current page');
           }
         }
       }

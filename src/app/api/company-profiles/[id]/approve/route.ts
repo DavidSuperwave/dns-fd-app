@@ -58,13 +58,27 @@ export async function POST(
 
         // Update status to 'approved' (ready for Phase 2 when user clicks Generate ICP)
         const reportData = companyProfile.company_report || {};
+        const body = await request.json().catch(() => ({}));
+        const { updatedReportData } = body;
+
+        // If updated data is provided, merge it into the existing report
+        let finalReportData = reportData;
+        if (updatedReportData) {
+            finalReportData = {
+                ...reportData,
+                phase_data: {
+                    ...reportData.phase_data,
+                    phase_1_company_report: updatedReportData
+                }
+            };
+        }
 
         await supabaseAdmin
             .from('company_profiles')
             .update({
                 workflow_status: 'approved', // New status: approved but not yet generating Phase 2
                 company_report: {
-                    ...reportData,
+                    ...finalReportData,
                     phase_1_approved: true,
                 },
             })

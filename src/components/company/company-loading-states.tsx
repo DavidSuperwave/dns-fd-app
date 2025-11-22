@@ -6,10 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Building2, CheckCircle2 } from "lucide-react";
 
 const loadingStates = [
-  "Generating",
-  "Creating report",
-  "Validating report",
-  "Finding competitors",
+  "Doing company research",
+  "Checking LinkedIn",
+  "Analyzing market data",
+  "Drafting strategy",
 ];
 
 interface CompanyProjectCardProps {
@@ -88,38 +88,23 @@ export function CompanyLoadingStates({
       return;
     }
 
-    // Map workflow status to loading state index
-    const statusMap: Record<string, number> = {
-      'pending': 0,
-      'generating': 0,
-      'creating_report': 1,
-      'validating_report': 2,
-      'finding_competitors': 3,
-    };
+    // Cycle through states every 3 seconds with fade transition
+    const interval = setInterval(() => {
+      // Fade out
+      setIsVisible(false);
 
-    const mappedIndex = statusMap[currentStatus] ?? 0;
-    setCurrentIndex(mappedIndex);
+      // After fade out, change state and fade in
+      setTimeout(() => {
+        setCurrentIndex((prevIndex) => {
+          const nextIndex = prevIndex + 1;
+          return nextIndex < loadingStates.length ? nextIndex : 0; // Loop back to start
+        });
+        setIsVisible(true);
+      }, 300); // Half of transition duration
+    }, 3000);
 
-    // Cycle through states every 3 seconds with fade transition (only if status is pending/generating)
-    if (currentStatus === 'pending' || currentStatus === 'generating') {
-      const interval = setInterval(() => {
-        // Fade out
-        setIsVisible(false);
-
-        // After fade out, change state and fade in
-        setTimeout(() => {
-          const nextIndex = currentIndex + 1;
-
-          if (nextIndex < loadingStates.length) {
-            setCurrentIndex(nextIndex);
-            setIsVisible(true);
-          }
-        }, 300); // Half of transition duration
-      }, 3000);
-
-      return () => clearInterval(interval);
-    }
-  }, [currentIndex, currentStatus, onComplete]);
+    return () => clearInterval(interval);
+  }, [currentStatus, onComplete]);
 
   // Update status when prop changes
   useEffect(() => {
@@ -201,8 +186,8 @@ export function CompanyLoadingStates({
   };
 
   return (
-    <Card>
-      <CardContent className="pt-6">
+    <Card className="h-full flex flex-col">
+      <CardContent className="pt-6 flex-1 flex flex-col justify-center">
         <div className="flex flex-col items-center justify-center min-h-[400px] space-y-8">
           {/* Title */}
           <div className="text-center">
@@ -242,6 +227,8 @@ export function CompanyLoadingStates({
               This might take a minute. Check back in a few minutes to get your report.
             </p>
 
+            {/* Debug Buttons - Hidden for production but kept for dev */}
+            {/* 
             <div className="pt-4 border-t flex flex-col gap-3 items-center">
               <button
                 onClick={handleFetchManusData}
@@ -276,6 +263,7 @@ export function CompanyLoadingStates({
                 </div>
               )}
             </div>
+            */}
           </div>
         </div>
       </CardContent>

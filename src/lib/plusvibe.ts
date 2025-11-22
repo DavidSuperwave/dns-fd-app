@@ -237,6 +237,15 @@ interface CampaignsResponse {
 }
 
 interface AnalyticsSummaryResponse {
+  campaign_id?: string;
+  campaign_name?: string;
+  completed?: number;
+  contacted?: number;
+  leads_who_read?: number;
+  leads_who_replied?: number;
+  bounced?: number;
+  unsubscribed?: number;
+  // Legacy/Fallback fields
   data?: {
     emails_sent_today?: number;
     emails_sent_total?: number;
@@ -314,24 +323,42 @@ export async function fetchCampaignSummaryMetrics(
   credentials?: PlusVibeClientCredentials
 ): Promise<CampaignSummaryMetrics> {
   try {
-    const response = await plusVibeRequest<AnalyticsSummaryResponse>("/analytics/get/campaign-summary", {
-      query: { range: "today", campaign_id: campaignId },
+    // Use the correct endpoint for campaign summary
+    // Note: This endpoint requires campaign_id. If not provided, we might need another endpoint or return 0.
+    // The docs say /analytics/campaign/summary?workspace_id&campaign_id
+
+    if (!campaignId) {
+      // If no campaign ID, we can't get specific summary from this endpoint.
+      // We could try to get workspace-wide stats if available, but for now return 0.
+      return {
+        emailsSentToday: 0,
+        totalReplies: 0,
+      };
+    }
+
+    const response = await plusVibeRequest<AnalyticsSummaryResponse>("/analytics/campaign/summary", {
+      query: { campaign_id: campaignId },
       credentials,
     });
 
-    const metrics = response.data || response.metrics || {};
+    // Map response fields to our internal metrics
+    // The API returns 'contacted' (total sent?) and 'leads_who_replied'
+    // It does not seem to return 'today' metrics explicitly, so we map total to today as a fallback
+    // or just use total. The UI expects 'emailsSentToday' but often displays it as 'Sent'.
 
     return {
       emailsSentToday:
+        Number(response.contacted) ||
         Number(response.emails_sent_today) ||
-        Number(metrics?.emails_sent_today) ||
-        Number(metrics?.emails_sent_total) ||
+        Number(response.data?.emails_sent_today) ||
+        Number(response.data?.emails_sent_total) ||
         0,
       totalReplies:
+        Number(response.leads_who_replied) ||
         Number(response.total_replies) ||
         Number(response.replies_total) ||
-        Number(metrics?.total_replies) ||
-        Number(metrics?.replies_total) ||
+        Number(response.data?.total_replies) ||
+        Number(response.data?.replies_total) ||
         0,
     };
   } catch (error) {
@@ -445,22 +472,17 @@ export async function fetchInboxReplies(options: FetchInboxRepliesOptions = {}):
   const { campaignId = null, limit = 50, status = null, search = null, credentials } = options;
 
   const query: Record<string, QueryValue> = {
-    limit: Math.min(Math.max(Number(limit) || 1, 1), 200),
-    email_type: "received",
-    sort: "recent",
+    // limit and sort are not supported by the API endpoint /unibox/emails
+    // email_type: "received",
   };
 
   if (campaignId) {
     query.campaign_id = campaignId;
   }
 
-  if (status) {
-    query.status = status;
-  }
-
-  if (search) {
-    query.search = search;
-  }
+  // Status and search are not supported by the API endpoint directly
+  // if (status) { query.status = status; }
+  // if (search) { query.search = search; }
 
   try {
     const response = await plusVibeRequest<UniboxEmailsResponse>("/unibox/emails", {
@@ -599,12 +621,27 @@ export async function getOverviewSnapshot(
 // Campaign Management Functions
 // ============================================================================
 
+export interface CampaignVariation {
+  variation: string; // "A", "B", etc.
+  subject: string;
+  body: string; // HTML supported
+  name?: string;
+}
+
+export interface CampaignSequence {
+  step: number;
+  wait_time: number; // Days to wait
+  variations: CampaignVariation[];
+}
+
 export interface CreateCampaignParams {
   name: string;
   description?: string;
   fromEmail?: string;
   fromName?: string;
   replyToEmail?: string;
+  sequences?: CampaignSequence[];
+  firstWaitTime?: number;
 }
 
 /**
@@ -615,15 +652,16 @@ export async function createPlusVibeCampaign(
   credentials?: PlusVibeClientCredentials
 ): Promise<PlusVibeCampaign> {
   const body: Record<string, any> = {
-    name: params.name,
-    description: params.description,
+    camp_name: params.name,
+    // description: params.description, // Not supported by API
     from_email: params.fromEmail,
     from_name: params.fromName,
     reply_to_email: params.replyToEmail || params.fromEmail,
+    ...(params.sequences && { sequences: params.sequences }),
   };
 
   const response = await plusVibeRequest<{ data?: PlusVibeCampaign; campaign?: PlusVibeCampaign }, Record<string, any>>(
-    "/campaign/create",
+    "/campaign/add/campaign",
     {
       method: "POST",
       body,
@@ -649,10 +687,12 @@ export async function updatePlusVibeCampaign(
     ...(params.fromEmail && { from_email: params.fromEmail }),
     ...(params.fromName && { from_name: params.fromName }),
     ...(params.replyToEmail && { reply_to_email: params.replyToEmail }),
+    ...(params.sequences && { sequences: params.sequences }),
+    ...(params.firstWaitTime && { first_wait_time: params.firstWaitTime }),
   };
 
   const response = await plusVibeRequest<{ data?: PlusVibeCampaign; campaign?: PlusVibeCampaign }, Record<string, any>>(
-    "/campaign/update",
+    "/campaign/update/campaign",
     {
       method: "PATCH",
       body,
@@ -671,20 +711,6 @@ export async function activateCampaign(
   credentials?: PlusVibeClientCredentials
 ): Promise<void> {
   await plusVibeRequest("/campaign/activate", {
-    method: "POST",
-    body: { campaign_id: campaignId },
-    credentials,
-  });
-}
-
-/**
- * Pause a campaign in PlusVibe
- */
-export async function pauseCampaign(
-  campaignId: string,
-  credentials?: PlusVibeClientCredentials
-): Promise<void> {
-  await plusVibeRequest("/campaign/pause", {
     method: "POST",
     body: { campaign_id: campaignId },
     credentials,
@@ -787,7 +813,8 @@ export async function fetchCampaignLeads(
     const response = await plusVibeRequest<{ data?: PlusVibeLead[]; leads?: PlusVibeLead[] }>(
       "/lead/get",
       {
-        query: { campaign_id: campaignId, limit: 1000 },
+        method: "POST",
+        body: { campaign_id: campaignId, limit: 100 },
         credentials,
       }
     );
@@ -812,7 +839,7 @@ export async function fetchCampaignEmails(
 ): Promise<any[]> {
   try {
     const response = await plusVibeRequest<{ data?: any[]; emails?: any[] }>(
-      "/campaign/get-emails",
+      "/unibox/campaign-emails",
       {
         query: { campaign_id: campaignId },
         credentials,
@@ -823,11 +850,35 @@ export async function fetchCampaignEmails(
     return Array.isArray(emails) ? emails : [];
   } catch (error) {
     if (error instanceof PlusVibeAPIError && error.status === 404) {
-      console.warn(`[PlusVibe] No emails found for campaign ${campaignId}`);
       return [];
     }
     throw error;
   }
 }
 
+/**
+ * Fetch email accounts associated with a campaign
+ */
+export async function fetchCampaignEmailAccounts(
+  campaignId: string,
+  credentials?: PlusVibeClientCredentials
+): Promise<any[]> {
+  try {
+    const response = await plusVibeRequest<{ data?: any[]; accounts?: any[]; email_accounts?: any[] }>(
+      "/campaign/get/accounts",
+      {
+        query: { campaign_id: campaignId },
+        credentials,
+      }
+    );
 
+    const accounts = response.accounts || response.email_accounts || response.data || [];
+    return Array.isArray(accounts) ? accounts : [];
+  } catch (error) {
+    if (error instanceof PlusVibeAPIError && error.status === 404) {
+      console.warn(`[PlusVibe] No email accounts found for campaign ${campaignId}`);
+      return [];
+    }
+    throw error;
+  }
+}
